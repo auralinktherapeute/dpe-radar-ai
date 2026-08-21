@@ -265,15 +265,17 @@
             min-width: 140px;
         }
 
-        /* Email et telephone : jamais tronques, jamais coupes sur 2 lignes */
-        th:nth-child(7), td.col-email {
-            min-width: 210px;
-        }
-
-        th:nth-child(8), td.col-phone {
-            min-width: 160px;
+        /* Contact : jamais tronque, jamais coupe sur 2 lignes */
+        th:nth-child(8), td.col-contact {
+            min-width: 220px;
             white-space: nowrap;
             font-variant-numeric: tabular-nums;
+        }
+
+        .contact-todo {
+            color: var(--text-secondary);
+            font-style: italic;
+            opacity: 0.65;
         }
 
         .date-age {
@@ -384,7 +386,7 @@
             </div>
             <div class="stat-card">
                 <div class="stat-value" id="contact-percent">0%</div>
-                <div class="stat-label">Avec contacts</div>
+                <div class="stat-label">Étiquettes F/G</div>
             </div>
         </div>
 
@@ -471,8 +473,8 @@
                         <th class="sortable" onclick="sortTable('grade')">Grade</th>
                         <th class="sortable" onclick="sortTable('score')">Score Opp.</th>
                         <th class="sortable" onclick="sortTable('date')">Date DPE</th>
-                        <th>Email</th>
-                        <th>Téléphone</th>
+                        <th class="sortable" onclick="sortTable('surface')">Surface</th>
+                        <th>Contact propriétaire</th>
                     </tr>
                 </thead>
                 <tbody id="results-body">
@@ -571,7 +573,8 @@
                 'distance': 'distance_km',
                 'grade': 'grade',
                 'score': 'score',
-                'date': 'diagnostic_date'
+                'date': 'diagnostic_date',
+                'surface': 'surface_m2'
             };
 
             currentData.sort((a, b) => {
@@ -615,6 +618,11 @@
                     else if (r.days_ago < 14) ageStr = `il y a ${r.days_ago} jours`;
                     else ageStr = `il y a ${Math.floor(r.days_ago / 7)} semaines`;
                 }
+                // L'ADEME ne diffuse aucun contact : on le dit, on n'invente rien.
+                const contactCell = (r.email || r.phone)
+                    ? `${r.email ? `<a href="mailto:${r.email}">${r.email}</a><br>` : ''}` +
+                      `${r.phone ? `<a href="tel:${r.phone.replace(/\s/g, '')}">${r.phone}</a>` : ''}`
+                    : `<span class="contact-todo">à enrichir</span>`;
                 return `
                 <tr>
                     <td>${r.address}</td>
@@ -631,8 +639,11 @@
                         <div>${dateStr}</div>
                         <div class="date-age">${ageStr}</div>
                     </td>
-                    <td class="col-email"><a href="mailto:${r.email}">${r.email}</a></td>
-                    <td class="col-phone"><a href="tel:${(r.phone || '').replace(/\s/g, '')}">${r.phone || 'N/A'}</a></td>
+                    <td>
+                        <div>${r.surface_m2 ? r.surface_m2 + ' m²' : '—'}</div>
+                        <div class="date-age">${r.type_batiment || ''}</div>
+                    </td>
+                    <td class="col-contact">${contactCell}</td>
                 </tr>
             `;
             }).join('');
@@ -664,13 +675,13 @@
             const total = results.length;
             const avgScore = total > 0 ? results.reduce((a, b) => a + (b.score || 0), 0) / total : 0;
             const cities = new Set(results.map(r => r.city)).size;
-            const withContact = results.filter(r => r.email && r.phone).length;
-            const contactPercent = total > 0 ? Math.round((withContact / total) * 100) : 0;
+            const passoires = results.filter(r => r.grade === 'F' || r.grade === 'G').length;
+            const contactPercent = total > 0 ? Math.round((passoires / total) * 100) + '%' : '0%';
 
             document.getElementById('total-count').textContent = total;
             document.getElementById('avg-score').textContent = avgScore.toFixed(1);
             document.getElementById('city-count').textContent = cities;
-            document.getElementById('contact-percent').textContent = contactPercent + '%';
+            document.getElementById('contact-percent').textContent = contactPercent;
         }
 
         function exportCSV() {
@@ -679,7 +690,7 @@
                 return;
             }
 
-            const headers = ['Adresse', 'Ville', 'Rayon (km)', 'Grade', 'Score', 'Date DPE', 'Ancienneté (jours)', 'Email', 'Téléphone'];
+            const headers = ['N° DPE', 'Adresse', 'Ville', 'Rayon (km)', 'Grade DPE', 'GES', 'Score', 'Date DPE', 'Ancienneté (jours)', 'Surface (m²)', 'Type', 'Conso (kWh/m²/an)', 'Email', 'Téléphone', 'Source'];
             const csv = [headers.join(';')];
 
             currentData.forEach(row => {
@@ -687,15 +698,21 @@
                     ? new Date(row.diagnostic_date).toLocaleDateString('fr-FR')
                     : 'N/A';
                 const data = [
+                    row.numero_dpe || '',
                     row.address,
                     row.city,
                     row.distance_km,
                     row.grade,
+                    row.grade_ges || '',
                     row.score.toFixed(0),
                     dateStr,
                     row.days_ago !== null && row.days_ago !== undefined ? row.days_ago : '',
-                    row.email,
-                    row.phone
+                    row.surface_m2 || '',
+                    row.type_batiment || '',
+                    row.conso_kwh_m2_an || '',
+                    row.email || '',
+                    row.phone || '',
+                    row.source || ''
                 ];
                 csv.push(data.map(d => `"${d}"`).join(';'));
             });

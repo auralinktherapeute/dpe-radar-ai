@@ -168,9 +168,17 @@ def endpoint_search(params):
             'id': p['id'], 'address': p['address'], 'city': p['city'], 'zip': p['zip'],
             'grade': p.get('grade') or 'N/A', 'score': score,
             'email': p.get('email'), 'phone': p.get('phone'),
+            'owner_name': p.get('owner_name'),
             'diagnostic_date': p.get('diagnostic_date'),
             'days_ago': (datetime.now() - established).days if established else None,
             'distance_km': round(distance, 2),
+            # Donnees ADEME reelles
+            'numero_dpe': p.get('numero_dpe'),
+            'surface_m2': p.get('surface_m2'),
+            'type_batiment': p.get('type_batiment'),
+            'conso_kwh_m2_an': p.get('conso_kwh_m2_an'),
+            'grade_ges': p.get('grade_ges'),
+            'source': p.get('source'),
         })
     results.sort(key=lambda r: r['distance_km'])
     return results
@@ -183,9 +191,12 @@ def endpoint_alerts(params):
 
     alerts = []
     for p in PROPERTIES:
-        if not p.get('email') or not p.get('diagnostic_date'):
+        # L'alerte repose sur la date du DPE, pas sur la presence d'un contact :
+        # les donnees ADEME n'en contiennent aucun.
+        if not p.get('diagnostic_date'):
             continue
         try:
+            # L'ADEME date au jour (2026-08-10), sans heure.
             established = datetime.fromisoformat(p['diagnostic_date'])
         except ValueError:
             continue
@@ -199,6 +210,10 @@ def endpoint_alerts(params):
             'diagnostic_date': p['diagnostic_date'],
             'opportunity_score': p.get('score') or 0,
             'hours_ago': hours_ago,
+            'days_ago': hours_ago // 24,
+            'surface_m2': p.get('surface_m2'),
+            'type_batiment': p.get('type_batiment'),
+            'numero_dpe': p.get('numero_dpe'),
             'alert_priority': 'URGENT' if hours_ago < 12 else 'HIGH',
         })
     alerts.sort(key=lambda a: a['opportunity_score'], reverse=True)
