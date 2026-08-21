@@ -288,6 +288,20 @@
             font-size: 12px;
         }
 
+        .contact-attente {
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+
+        .legende {
+            font-size: 12px;
+            color: var(--text-secondary);
+            max-width: 620px;
+            margin-top: 4px;
+        }
+
+        .legende strong { color: var(--accent-cyan); font-weight: 600; }
+
         .lead-nom {
             color: var(--accent-cyan);
             font-weight: 600;
@@ -474,7 +488,12 @@
 
         <div class="results-section">
             <div class="results-header">
-                <h2 style="color: var(--accent-cyan);">📍 Biens à prospecter</h2>
+                <div>
+                    <h2 style="color: var(--accent-cyan);">📍 Biens à prospecter</h2>
+                    <p class="legende">L'ADEME ne publie aucun contact. Chaque bien reçoit un
+                    <strong>code courrier</strong> ; quand le propriétaire répond via ce code,
+                    ses coordonnées apparaissent ici.</p>
+                </div>
                 <div class="results-count" id="results-count"></div>
             </div>
 
@@ -659,8 +678,9 @@
                         (lead.telephone ? `<a href="tel:${lead.telephone.replace(/\s/g,'')}">${lead.telephone}</a><br>` : '') +
                         (lead.email ? `<a href="mailto:${lead.email}">${lead.email}</a>` : '');
                 } else {
-                    contactCell = `<span class="code-suivi">${r.code_suivi || '—'}</span>` +
-                        `<div class="contact-todo">courrier à envoyer</div>`;
+                    contactCell = `<div class="contact-attente">Pas encore de réponse</div>` +
+                        `<div class="contact-todo">code courrier ` +
+                        `<span class="code-suivi">${r.code_suivi || '—'}</span></div>`;
                 }
                 return `
                 <tr>
