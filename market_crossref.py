@@ -32,6 +32,7 @@ import json
 import os
 import sys
 import time
+import re
 import unicodedata
 import urllib.parse
 import urllib.request
@@ -213,6 +214,77 @@ def robots_autorise(base, chemin):
     return rp.can_fetch(UA, urllib.parse.urljoin(base, chemin))
 
 
+FIRECRAWL_API = "https://api.firecrawl.dev/v2/scrape"
+
+
+def _firecrawl(url, cle, attente=4000):
+    """Recupere une page en markdown via Firecrawl."""
+    import urllib.request
+    corps = json.dumps({"url": url, "formats": ["markdown"],
+                        "waitFor": attente}).encode("utf-8")
+    req = urllib.request.Request(
+        FIRECRAWL_API, data=corps, method="POST",
+        headers={"Authorization": f"Bearer {cle}",
+                 "Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        d = json.loads(r.read().decode("utf-8"))
+    if not d.get("success"):
+        raise RuntimeError(str(d.get("error"))[:200])
+    return (d.get("data") or {}).get("markdown", "")
+
+
+def charger_firecrawl(site, commune, index, max_annonces=25):
+    """Collecte via Firecrawl, en deux temps.
+
+    La page de recherche ne porte ni etiquette DPE ni consommation : elle ne
+    donne que type, pieces et surface, ce qui plafonne l'unicite de la
+    signature a 70%. L'etiquette n'apparait que sur la page de l'annonce.
+    On paie donc un credit par annonce : d'ou le plafond max_annonces.
+    """
+    cle = os.environ.get("FIRECRAWL_API_KEY", "")
+    if not cle:
+        print("  ! FIRECRAWL_API_KEY absente de l'environnement", file=sys.stderr)
+        return 0
+
+    conf = SITES.get(site)
+    if not conf:
+        print(f"  ! site inconnu : {site}", file=sys.stderr)
+        return 0
+    chemin = conf["recherche"].format(commune=urllib.parse.quote(commune))
+    if not robots_autorise(conf["base"], chemin):
+        print(f"  ! {site} : robots.txt interdit {chemin.split('?')[0]}", file=sys.stderr)
+        return 0
+
+    print(f"  page de recherche {site} / {commune}")
+    try:
+        md = _firecrawl(conf["base"] + chemin, cle)
+    except Exception as e:
+        print(f"  ! recherche impossible : {e}", file=sys.stderr)
+        return 0
+
+    liens = re.findall(r"https://www\.leboncoin\.fr/ad/[^)\s]+", md)
+    liens = list(dict.fromkeys(liens))[:max_annonces]
+    print(f"  {len(liens)} annonces a ouvrir (1 credit chacune)")
+
+    n = 0
+    for i, lien in enumerate(liens, 1):
+        try:
+            page = _firecrawl(lien, cle)
+        except Exception as e:
+            print(f"    {i}/{len(liens)} echec : {e}", file=sys.stderr)
+            continue
+        grade = re.search(r"(?:DPE|classe[ _]énergie)\D{0,40}\b([A-G])\b", page, re.I)
+        surf = re.search(r"(\d+[.,]?\d*)\s?m²", page)
+        if not (grade and surf):
+            continue
+        index.ajouter(commune, float(surf.group(1).replace(",", ".")),
+                      grade.group(1), None, lien, None)
+        n += 1
+        time.sleep(0.5)
+    print(f"  {n} annonces exploitables indexees")
+    return n
+
+
 def charger_obscura(site, commune, index):
     """Collecte via Obscura CDP, uniquement si le robots.txt l'autorise."""
     conf = SITES.get(site)
@@ -295,7 +367,9 @@ def rapport(biens):
 
 def main():
     p = argparse.ArgumentParser(description="Ecarte les biens ADEME deja en vente")
-    p.add_argument("--source", choices=["csv", "obscura"], default="csv")
+    p.add_argument("--source", choices=["csv", "obscura", "firecrawl"], default="csv")
+    p.add_argument("--max-annonces", type=int, default=25, dest="max_annonces",
+                   help="plafond d'annonces ouvertes (1 credit Firecrawl chacune)")
     p.add_argument("fichier", nargs="?", help="export d'annonces (--source csv)")
     p.add_argument("--site", choices=list(SITES), default="leboncoin")
     p.add_argument("--commune", help="commune a interroger (--source obscura)")
@@ -318,6 +392,10 @@ def main():
             p.error("--source csv attend un fichier")
         n = charger_csv(args.fichier, index)
         print(f"{n} annonces indexees depuis {os.path.basename(args.fichier)}")
+    elif args.source == "firecrawl":
+        if not args.commune:
+            p.error("--source firecrawl attend --commune")
+        charger_firecrawl(args.site, args.commune, index, args.max_annonces)
     else:
         if not args.commune:
             p.error("--source obscura attend --commune")
