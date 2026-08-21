@@ -300,25 +300,27 @@ def endpoint_properties(_params):
     } for p in PROPERTIES]
 
 
-def _lire_leads_supabase():
-    """Lit les leads via la cle service_role, qui contourne RLS.
+def _lire_leads_supabase(token):
+    """Lit les leads via une fonction dont la base verifie elle-meme le jeton.
 
-    Cette cle ne quitte jamais le serveur : le navigateur n'appelle que
-    /api/leads, lui-meme protege par ADMIN_TOKEN.
+    Aucune cle service_role n'intervient : elle donnerait un acces total a
+    toute la base depuis un service web public. La cle anonyme suffit, et
+    elle ne peut appeler que cette fonction.
     """
-    if not (SUPABASE_URL and SUPABASE_SERVICE_KEY):
+    if not (SUPABASE_URL and SUPABASE_KEY):
         return None
     import urllib.request
     req = urllib.request.Request(
-        f'{SUPABASE_URL}/rest/v1/leads?select=*&order=recu_le.desc',
-        headers={'apikey': SUPABASE_SERVICE_KEY,
-                 'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}',
-                 'Accept-Profile': 'dpe_radar'})
+        f'{SUPABASE_URL}/rest/v1/rpc/dpe_radar_list_leads',
+        data=json.dumps({'p_token': token}).encode('utf-8'), method='POST',
+        headers={'Content-Type': 'application/json',
+                 'apikey': SUPABASE_KEY,
+                 'Authorization': f'Bearer {SUPABASE_KEY}'})
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
             return json.loads(r.read().decode('utf-8'))
     except Exception as e:
-        print(f"[leads] lecture Supabase impossible ({type(e).__name__}: {e})", flush=True)
+        print(f"[leads] lecture refusee ({type(e).__name__}: {e})", flush=True)
         return None
 
 
@@ -329,7 +331,7 @@ def endpoint_leads(params):
     if params.get('token', [''])[0] != ADMIN_TOKEN:
         return {'error': 'jeton invalide'}
 
-    distants = _lire_leads_supabase()
+    distants = _lire_leads_supabase(params.get('token', [''])[0])
     if distants is not None:
         return distants
     if os.path.exists(LEADS_FILE):
@@ -406,7 +408,6 @@ cursor:pointer;width:100%;margin-top:8px}}
 
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '').rstrip('/')
 SUPABASE_KEY = os.environ.get('SUPABASE_ANON_KEY', '')
-SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
 ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN', '')
 
 
