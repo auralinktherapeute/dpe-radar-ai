@@ -1,0 +1,281 @@
+// DPE Radar AI — schema de donnees
+//
+// PRINCIPE STRUCTURANT : aucune table ne porte l'identite d'un proprietaire
+// prospecte. La cle d'un bien est son identifiant BAN. Les seules personnes
+// physiques presentes dans ce schema sont les UTILISATEURS de la plateforme
+// (negociateurs, directeurs), qui ont un contrat avec nous.
+//
+// Verifier docs/01-conformite-et-cadre-legal.md avant tout ajout de colonne.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// ─────────────────────────── Multi-agences ───────────────────────────
+
+model Network {
+  id        String   @id @default(cuid())
+  name      String
+  agencies  Agency[]
+  createdAt DateTime @default(now())
+}
+
+model Agency {
+  id        String  @id @default(cuid())
+  name      String
+  siret     String  @unique
+  network   Network? @relation(fields: [networkId], references: [id])
+  networkId String?
+
+  // Identite du responsable de traitement, injectee dans le bloc art. 14.
+  postalAddress String
+  dpoContact    String
+  oppositionUrl String
+
+  plan              Plan     @default(STARTER)
+  stripeCustomerId  String?  @unique
+  trialEndsAt       DateTime?
+
+  // Coupe-circuits, pilotables par agence et par le support.
+  outreachEnabled    Boolean @default(true)
+  phoneChannelEnabled Boolean @default(false)
+
+  users      User[]
+  territories Territory[]
+  leads      Lead[]
+  outreaches Outreach[]
+  createdAt  DateTime @default(now())
+
+  @@index([networkId])
+}
+
+enum Plan {
+  STARTER
+  PRO
+  RESEAU
+}
+
+model User {
+  id        String  @id @default(cuid())
+  clerkId   String  @unique
+  email     String
+  fullName  String
+  role      Role    @default(NEGOCIATEUR)
+  agency    Agency  @relation(fields: [agencyId], references: [id])
+  agencyId  String
+  leads     Lead[]
+  createdAt DateTime @default(now())
+
+  @@index([agencyId])
+}
+
+enum Role {
+  NEGOCIATEUR
+  DIRECTEUR
+  ADMIN_RESEAU
+}
+
+/// Secteur souscrit par une agence. Sert aussi a MINIMISER la collecte :
+/// on n'ingere que les communes effectivement couvertes par un abonnement.
+model Territory {
+  id        String @id @default(cuid())
+  agency    Agency @relation(fields: [agencyId], references: [id])
+  agencyId  String
+  inseeCode String
+  label     String
+
+  @@unique([agencyId, inseeCode])
+  @@index([inseeCode])
+}
+
+// ─────────────────────────── Biens et signaux ───────────────────────────
+
+/// Un BIEN, jamais une personne. `banId` est la cle metier.
+model Property {
+  id        String @id @default(cuid())
+  banId     String @unique
+  inseeCode String
+  /// Composants de la jointure ADEME <-> DVF (voir infrastructure/dvf/banKey.ts).
+  voieCode    String?
+  houseNumber String?
+
+  latitude  Float?
+  longitude Float?
+  precision GeoPrecision @default(UNKNOWN)
+  section   String?
+
+  buildingType String?
+  surfaceM2    Float?
+
+  dpes      Dpe[]
+  scores    Score[]
+  leads     Lead[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([inseeCode])
+  @@index([voieCode, houseNumber])
+}
+
+enum GeoPrecision {
+  HOUSENUMBER
+  STREET
+  MUNICIPALITY
+  UNKNOWN
+}
+
+/// Diagnostic ADEME. `dpeNumber` porte la deduplication du batch horaire.
+model Dpe {
+  id           String   @id @default(cuid())
+  dpeNumber    String   @unique
+  property     Property @relation(fields: [propertyId], references: [id])
+  propertyId   String
+  dpeClass     String   @db.Char(1)
+  establishedAt DateTime
+  receivedAt    DateTime
+  ingestedAt    DateTime @default(now())
+
+  @@index([propertyId])
+  @@index([receivedAt])
+}
+
+/// Statistiques de quartier issues de DVF.
+/// `observedAt` porte la DATE DES DONNEES, pas celle du calcul : DVF accuse
+/// plusieurs mois de retard, et c'est cette date qui doit peser sur la confiance.
+model NeighbourhoodStat {
+  id                  String   @id @default(cuid())
+  inseeCode           String
+  section             String?
+  salesLast12         Int
+  salesPrevious12     Int
+  pricePerSqmDelta12m Float
+  medianDpeClass      String?  @db.Char(1)
+  observedAt          DateTime
+  computedAt          DateTime @default(now())
+
+  @@unique([inseeCode, section, observedAt])
+  @@index([inseeCode])
+}
+
+/// Score d'intention de vente. Immuable : un nouveau calcul cree une ligne.
+/// L'historique est ce qui permet de justifier a posteriori un score conteste,
+/// et de mesurer la derive du modele.
+model Score {
+  id         String   @id @default(cuid())
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+
+  /// `null` quand la confiance est insuffisante — resultat legitime.
+  value              Int?
+  band               String
+  rangeMin           Int
+  rangeMax           Int
+  confidence         Int
+  coverage           Float
+  mailable           Boolean
+  comparabilityGroup String
+  /// Version du bareme : un score n'est interpretable qu'avec elle.
+  scaleVersion       String
+  /// Contributions detaillees, telles qu'affichees au negociateur.
+  reasons            Json
+  computedAt         DateTime @default(now())
+
+  @@index([propertyId, computedAt])
+  @@index([value])
+}
+
+// ─────────────────────────── Conformite ───────────────────────────
+
+/// Opposition d'un occupant. S'applique a TOUTES les agences de la plateforme.
+/// On stocke l'adresse, jamais l'identite de la personne qui s'oppose.
+model Suppression {
+  id           String   @id @default(cuid())
+  banId        String   @unique
+  reason       String
+  suppressedAt DateTime @default(now())
+
+  @@index([suppressedAt])
+}
+
+/// Journal immuable. Alimente le registre des traitements et permet de
+/// rejouer une decision : quel score, quel bareme, quel utilisateur, quand.
+model AuditEvent {
+  id        String   @id @default(cuid())
+  type      String
+  agencyId  String?
+  userId    String?
+  banId     String?
+  payload   Json
+  occurredAt DateTime @default(now())
+
+  @@index([type, occurredAt])
+  @@index([banId])
+}
+
+/// Trace d'une approche preparee. Conservee 3 ans comme PREUVE que
+/// l'information art. 14 a bien ete delivree avant le premier contact.
+model Outreach {
+  id         String   @id @default(cuid())
+  agency     Agency   @relation(fields: [agencyId], references: [id])
+  agencyId   String
+  banId      String
+  channel    String
+  legalBasis String
+  /// Message complet expedie, bloc d'information inclus.
+  renderedMessage String
+  noticeIncluded  Boolean
+  preparedAt DateTime @default(now())
+  sentAt     DateTime?
+
+  @@index([agencyId, preparedAt])
+  @@index([banId])
+}
+
+// ─────────────────────────── CRM ───────────────────────────
+
+model Lead {
+  id         String   @id @default(cuid())
+  agency     Agency   @relation(fields: [agencyId], references: [id])
+  agencyId   String
+  property   Property @relation(fields: [propertyId], references: [id])
+  propertyId String
+  owner      User?    @relation(fields: [ownerId], references: [id])
+  ownerId    String?
+
+  stage      LeadStage @default(A_QUALIFIER)
+  /// Issue observee : c'est elle qui recalibre le modele (docs/03, s.7).
+  outcome    LeadOutcome?
+  /// Marque les issues provoquees par notre propre action, pour ne pas
+  /// apprendre notre biais d'action comme s'il s'agissait d'une prediction.
+  actionInduced Boolean @default(true)
+
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([agencyId, propertyId])
+  @@index([agencyId, stage])
+}
+
+enum LeadStage {
+  A_QUALIFIER
+  CONTACTE
+  RDV_PRIS
+  ESTIMATION
+  MANDAT_SIGNE
+  PERDU
+}
+
+enum LeadOutcome {
+  MANDAT_OBTENU
+  VENDU_AILLEURS
+  PAS_VENDEUR
+  OPPOSITION
+  SANS_REPONSE
+}

@@ -1,0 +1,807 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DPE Radar AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+</head>
+<body>
+<style>
+:root{
+  --ground:#f6f7f9;
+  --surface:#ffffff;
+  --surface-2:#eef1f4;
+  --ink:#12161c;
+  --ink-2:#3c4753;
+  --muted:#5d6874;
+  --line:#dde2e8;
+  --line-strong:#c3ccd6;
+  --accent:#0f5e5c;
+  --accent-soft:#e2efee;
+  --accent-ink:#0b4a48;
+  --warn:#9a5b12;
+  --warn-soft:#fbeedd;
+  --stop:#a3231f;
+  --stop-soft:#f9e5e4;
+  --ok:#1f6b48;
+  --ok-soft:#e2f0e9;
+  --dpe-a:#319a69; --dpe-b:#4aad70; --dpe-c:#96c751;
+  --dpe-d:#e8d54a; --dpe-e:#e9ad3c; --dpe-f:#e07a35; --dpe-g:#cf2f26;
+  --shadow:0 1px 2px rgba(18,22,28,.05), 0 8px 24px -16px rgba(18,22,28,.22);
+  --maxw:70ch;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0f1318;
+    --surface:#161b21;
+    --surface-2:#1d242c;
+    --ink:#e7ecf1;
+    --ink-2:#bcc7d2;
+    --muted:#8b98a5;
+    --line:#2a333c;
+    --line-strong:#3a4650;
+    --accent:#57b7b1;
+    --accent-soft:#14302f;
+    --accent-ink:#8fd4cf;
+    --warn:#d9a05a;
+    --warn-soft:#312414;
+    --stop:#e8807a;
+    --stop-soft:#341a19;
+    --ok:#6dbb92;
+    --ok-soft:#152a20;
+    --dpe-a:#3ba876; --dpe-b:#57bd7f; --dpe-c:#a3d15e;
+    --dpe-d:#e3d35a; --dpe-e:#e5b055; --dpe-f:#dd8348; --dpe-g:#d9463c;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -18px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0f1318;
+  --surface:#161b21;
+  --surface-2:#1d242c;
+  --ink:#e7ecf1;
+  --ink-2:#bcc7d2;
+  --muted:#8b98a5;
+  --line:#2a333c;
+  --line-strong:#3a4650;
+  --accent:#57b7b1;
+  --accent-soft:#14302f;
+  --accent-ink:#8fd4cf;
+  --warn:#d9a05a;
+  --warn-soft:#312414;
+  --stop:#e8807a;
+  --stop-soft:#341a19;
+  --ok:#6dbb92;
+  --ok-soft:#152a20;
+  --dpe-a:#3ba876; --dpe-b:#57bd7f; --dpe-c:#a3d15e;
+  --dpe-d:#e3d35a; --dpe-e:#e5b055; --dpe-f:#dd8348; --dpe-g:#d9463c;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 30px -18px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--ground);
+  color:var(--ink);
+  font-family:"Source Serif 4","Iowan Old Style",Georgia,serif;
+  font-size:17px;
+  line-height:1.62;
+  margin:0;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+.wide{max-width:96ch;margin:0 auto;padding:0 22px}
+
+/* ── En-tête ─────────────────────────────── */
+.masthead{
+  border-bottom:1px solid var(--line);
+  background:var(--surface);
+  padding:52px 0 34px;
+}
+.masthead .wide{display:flex;flex-direction:column;gap:20px}
+.eyebrow{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;
+  font-size:11.5px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+}
+.eyebrow .dot{width:4px;height:4px;border-radius:50%;background:var(--line-strong)}
+h1{
+  font-family:"Bricolage Grotesque","Helvetica Neue",Arial,sans-serif;
+  font-weight:800;font-size:clamp(38px,6.2vw,62px);line-height:1.02;
+  letter-spacing:-.025em;margin:0;text-wrap:balance;
+}
+.standfirst{
+  font-size:clamp(18px,2.2vw,21px);line-height:1.5;color:var(--ink-2);
+  max-width:56ch;margin:0;
+}
+.statline{
+  display:flex;flex-wrap:wrap;gap:0;border:1px solid var(--line);
+  border-radius:3px;overflow:hidden;background:var(--ground);
+}
+.stat{flex:1 1 150px;padding:14px 18px;border-right:1px solid var(--line)}
+.stat:last-child{border-right:0}
+.stat b{
+  display:block;font-family:"IBM Plex Mono",monospace;font-weight:600;
+  font-size:22px;color:var(--ink);font-variant-numeric:tabular-nums;line-height:1.2;
+}
+.stat span{
+  display:block;font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-top:5px;
+}
+
+/* ── Sections ────────────────────────────── */
+section{padding:56px 0 8px}
+.sec-head{display:flex;gap:16px;align-items:baseline;margin-bottom:8px}
+.sec-num{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;font-weight:600;
+  color:var(--accent);letter-spacing:.06em;flex:none;padding-top:6px;
+}
+h2{
+  font-family:"Bricolage Grotesque",Arial,sans-serif;font-weight:700;
+  font-size:clamp(25px,3.4vw,33px);line-height:1.14;letter-spacing:-.02em;
+  margin:0;text-wrap:balance;
+}
+h3{
+  font-family:"Bricolage Grotesque",Arial,sans-serif;font-weight:600;
+  font-size:19px;line-height:1.3;letter-spacing:-.01em;margin:32px 0 10px;
+}
+p{margin:0 0 16px}
+a{color:var(--accent-ink);text-decoration-thickness:1px;text-underline-offset:2px}
+strong{font-weight:600;color:var(--ink)}
+code{
+  font-family:"IBM Plex Mono",monospace;font-size:.855em;
+  background:var(--surface-2);padding:1.5px 5px;border-radius:3px;color:var(--ink-2);
+}
+hr{border:0;border-top:1px solid var(--line);margin:56px 0 0}
+
+/* ── Encadrés de constat ─────────────────── */
+.finding{
+  background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:3px;
+  padding:22px 24px;margin:26px 0;box-shadow:var(--shadow);
+}
+.finding.alert{border-left-color:var(--stop)}
+.finding-tag{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--accent-ink);
+  margin-bottom:9px;display:block;
+}
+.finding.alert .finding-tag{color:var(--stop)}
+.finding h3{margin:0 0 10px;font-size:20px}
+.finding p:last-child{margin-bottom:0}
+.measure{
+  font-family:"IBM Plex Mono",monospace;font-size:13.5px;font-variant-numeric:tabular-nums;
+  background:var(--surface-2);border-radius:3px;padding:11px 14px;margin:14px 0;
+  display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;
+}
+.measure .bad{color:var(--stop);font-weight:600}
+.measure .good{color:var(--ok);font-weight:600}
+.measure .arrow{color:var(--muted)}
+
+/* ── Barème des signaux ──────────────────── */
+.signals{
+  border:1px solid var(--line);border-radius:3px;overflow:hidden;
+  background:var(--surface);margin:24px 0;box-shadow:var(--shadow);
+}
+.sig{
+  display:grid;grid-template-columns:1fr 62px;gap:14px;align-items:center;
+  padding:11px 18px;border-bottom:1px solid var(--line);
+}
+.sig:last-child{border-bottom:0}
+.sig-label{display:flex;flex-direction:column;gap:5px;min-width:0}
+.sig-name{
+  font-family:"Bricolage Grotesque",Arial,sans-serif;font-size:14.5px;font-weight:600;
+  letter-spacing:-.005em;
+}
+.sig-src{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);
+}
+.bar{height:7px;border-radius:99px;background:var(--accent);opacity:.85}
+.bar.dvf{background:var(--warn)}
+.sig-w{
+  font-family:"IBM Plex Mono",monospace;font-size:15px;font-weight:600;
+  font-variant-numeric:tabular-nums;text-align:right;color:var(--ink);
+}
+.sig-foot{
+  padding:12px 18px;background:var(--surface-2);
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--muted);
+  display:flex;flex-wrap:wrap;gap:16px;
+}
+.key{display:inline-flex;align-items:center;gap:6px}
+.key i{width:16px;height:6px;border-radius:99px;display:inline-block}
+.key i.a{background:var(--accent);opacity:.85}
+.key i.d{background:var(--warn)}
+
+/* ── Échelle DPE ─────────────────────────── */
+.dpe-scale{display:flex;gap:4px;margin:22px 0 10px;flex-wrap:wrap}
+.dpe{
+  flex:1 1 60px;border-radius:3px;padding:10px 8px 9px;color:#12161c;
+  font-family:"IBM Plex Mono",monospace;text-align:center;
+}
+.dpe b{display:block;font-size:17px;font-weight:600;line-height:1}
+.dpe span{display:block;font-size:11px;margin-top:5px;opacity:.82;font-variant-numeric:tabular-nums}
+
+/* ── Tableaux ────────────────────────────── */
+.tablewrap{overflow-x:auto;margin:22px 0;border:1px solid var(--line);border-radius:3px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px;min-width:520px}
+th{
+  font-family:"IBM Plex Mono",monospace;font-size:10.5px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted);
+  text-align:left;padding:12px 16px;border-bottom:1px solid var(--line-strong);
+  background:var(--surface-2);white-space:nowrap;
+}
+td{padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+.pill{
+  display:inline-block;font-family:"IBM Plex Mono",monospace;font-size:10.5px;
+  font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  padding:3px 9px;border-radius:99px;white-space:nowrap;
+}
+.pill.no{background:var(--stop-soft);color:var(--stop)}
+.pill.yes{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+
+/* ── Livrable / état ─────────────────────── */
+.build{display:grid;gap:0;border:1px solid var(--line);border-radius:3px;overflow:hidden;background:var(--surface);margin:22px 0}
+.brow{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line)}
+.brow:last-child{border-bottom:0}
+.brow span{font-size:15px}
+.mark{font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.mark.done{color:var(--ok)}
+.mark.todo{color:var(--stop)}
+
+/* ── Terminal ────────────────────────────── */
+.term{
+  background:var(--surface);border:1px solid var(--line);border-radius:3px;
+  overflow:hidden;margin:22px 0;box-shadow:var(--shadow);
+}
+.term-bar{
+  padding:9px 16px;background:var(--surface-2);border-bottom:1px solid var(--line);
+  font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--muted);
+}
+.term pre{
+  margin:0;padding:16px;overflow-x:auto;
+  font-family:"IBM Plex Mono",monospace;font-size:12.5px;line-height:1.62;
+  color:var(--ink-2);
+}
+.term .hl{color:var(--accent-ink);font-weight:600}
+.term .dim{color:var(--muted)}
+
+ul{margin:0 0 16px;padding-left:22px}
+li{margin-bottom:7px}
+li::marker{color:var(--muted)}
+
+footer{
+  border-top:1px solid var(--line);margin-top:64px;padding:34px 0 56px;
+  font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--muted);
+  line-height:1.75;
+}
+footer b{color:var(--ink-2);font-weight:600}
+
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+@media (max-width:620px){
+  body{font-size:16px}
+  .stat{flex:1 1 100%;border-right:0;border-bottom:1px solid var(--line)}
+  .stat:last-child{border-bottom:0}
+  .sec-head{gap:11px}
+}
+</style>
+
+<header class="masthead">
+  <div class="wide">
+    <div class="eyebrow">
+      <span>Dossier de conception</span><span class="dot"></span>
+      <span>20 août 2026</span><span class="dot"></span>
+      <span>SaaS · agences immobilières France</span>
+    </div>
+    <h1>DPE&nbsp;Radar&nbsp;AI</h1>
+    <p class="standfirst">
+      Un score d’intention de vente calculé sur un <em>bien</em>, jamais sur une personne —
+      à partir des diagnostics ADEME, des transactions DVF et des signaux de marché.
+    </p>
+    <div class="statline">
+      <div class="stat"><b>263</b><span>tests au vert</span></div>
+      <div class="stat"><b>2,70×</b><span>lift mesuré</span></div>
+      <div class="stat"><b>9 114</b><span>biens backtestés</span></div>
+      <div class="stat"><b>8</b><span>signaux, somme = 100</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section>
+  <div class="sec-head"><span class="sec-num">00</span><h2>La thèse</h2></div>
+  <p>
+    Une agence signe un mandat quand elle arrive avant les autres. La pige classique ne se
+    déclenche qu’une fois l’annonce publiée — à ce moment-là, trois à six agences ont déjà
+    appelé le vendeur. Le temps utile est <strong>en amont de l’annonce</strong>, et il dure
+    deux à six mois.
+  </p>
+  <p>
+    Ce temps laisse une trace publique. <strong>Un DPE ne se fait pas par hasard</strong> :
+    il est obligatoire pour vendre. Un diagnostic frais, sur un logement sans annonce active,
+    dans un quartier qui s’anime, est l’un des rares signaux antérieurs à la mise en vente qui
+    soit à la fois public, daté et localisé à l’adresse.
+  </p>
+  <p>
+    Le produit ne dit jamais « ce bien est à vendre ». Il dit quels signaux sont compatibles
+    avec une préparation de vente, avec quel niveau de confiance, et lesquels exactement.
+    La nuance n’est pas cosmétique : c’est la différence entre un outil défendable et un outil
+    qui expose l’agence.
+  </p>
+</section>
+
+<hr>
+
+<section>
+  <div class="sec-head"><span class="sec-num">01</span><h2>Trois décisions qui structurent tout le reste</h2></div>
+
+  <h3>Le score porte sur un bien, jamais sur une personne</h3>
+  <p>
+    Aucun nom, aucun numéro de téléphone, aucune donnée de situation personnelle n’entre dans
+    le système. La clé métier est l’identifiant BAN de l’adresse. La liste des signaux
+    autorisés est une liste blanche fermée : tout signal socio-démographique, de revenu ou de
+    santé en est exclu par construction, pas par convention.
+  </p>
+
+  <h3>Aucune coordonnée ne vient des données publiques</h3>
+  <p>
+    L’ADEME, DVF et la BAN ne contiennent aucun numéro. Les coordonnées proviennent
+    exclusivement du <strong>logiciel de pige sous licence de l’agence</strong>, et chacune
+    porte sa provenance : éditeur, référence de licence, date de constat. Sans provenance,
+    la coordonnée n’entre pas dans le système. Au-delà de 90 jours, elle n’est plus
+    composable.
+  </p>
+  <p>
+    Le canal téléphone est disponible, sous un régime que chaque agence choisit —
+    <em>consentement requis</em> ou <em>responsabilité de l’agence</em>. Le produit
+    n’arbitre pas à la place du responsable de traitement : il expose le régime en clair,
+    attache la base légale revendiquée à chaque approche préparée, et l’horodate. En cas de
+    contrôle, le journal montre sous quel fondement chaque appel a été préparé.
+  </p>
+
+  <h3>Le score porte le fond, la confiance porte l’incertitude</h3>
+  <p>
+    Un bien mal documenté n’est pas un mauvais bien : il est mal connu. Le score est renormalisé
+    sur les seuls signaux disponibles, et c’est la confiance qui baisse. Sous 40 de confiance,
+    aucun chiffre n’est affiché — seulement une fourchette. Un chiffre faux présenté avec
+    assurance détruit la confiance d’un négociateur plus vite qu’une absence de chiffre.
+  </p>
+</section>
+
+<hr>
+
+<section>
+  <div class="sec-head"><span class="sec-num">02</span><h2>Deux pièges trouvés en interrogeant les sources réelles</h2></div>
+  <p>
+    Les deux constats qui suivent viennent d’avoir sondé les API en production, pas d’une
+    lecture de documentation. Aucun des deux n’était visible sur le papier.
+  </p>
+
+  <div class="finding alert">
+    <span class="finding-tag">Constat 1 · biais silencieux, portée nationale</span>
+    <h3>DVF est publié en retard — et cela faisait lire un krach partout</h3>
+    <p>
+      Ancrer les fenêtres glissantes sur la date du jour compare un dernier exercice
+      <em>tronqué</em> à un exercice complet. Mesure réelle sur Bordeaux :
+    </p>
+    <div class="measure">
+      <span>Avant :</span>
+      <span class="bad">1 878 ventes contre 4 660 → −60 %</span>
+      <span class="arrow">·</span>
+      <span>Après :</span>
+      <span class="good">4 905 contre 3 997 → +23 %</span>
+    </div>
+    <p>
+      Le marché bordelais ne s’est pas effondré : les douze derniers mois n’étaient pas encore
+      publiés. Le signal de dynamique de marché aurait lu un effondrement dans toute la France,
+      sans rien signaler. Les fenêtres sont désormais ancrées sur la dernière mutation
+      réellement publiée, et le retard se répercute sur la confiance au lieu de fausser le
+      signal. Un test de régression verrouille le comportement.
+    </p>
+  </div>
+
+  <div class="finding alert">
+    <span class="finding-tag">Constat 2 · contrainte de go-to-market</span>
+    <h3>L’Alsace-Moselle est absente de DVF</h3>
+    <p>
+      Les fichiers départementaux <code>57</code>, <code>67</code>, <code>68</code> et
+      <code>976</code> renvoient 404, quand <code>01</code>, <code>13</code>, <code>75</code>
+      et <code>971</code> répondent. Ce n’est pas une panne : l’Alsace-Moselle relève du
+      <strong>livre foncier</strong> issu du droit local, et non de la publicité foncière qui
+      alimente DVF.
+    </p>
+    <p>
+      Trois signaux sur huit y sont donc structurellement indisponibles — <strong>30 des 100
+      points du barème</strong>. Le score reste calculable, la confiance plafonne à 85, et les
+      scores de ces territoires sont marqués <em>non comparables</em> avec les autres. Une
+      agence de Strasbourg, Colmar ou Metz n’aura jamais le produit complet : cela doit être dit
+      avant la signature, pas découvert au bout d’un mois.
+    </p>
+  </div>
+
+  <div class="finding">
+    <span class="finding-tag">Bonne surprise · la jointure est exacte</span>
+    <h3>ADEME et DVF se recollent à l’adresse, sans appariement flou</h3>
+    <p>
+      L’identifiant BAN se décompose en <code>{INSEE}_{voie}_{numéro}</code>, et DVF porte les
+      mêmes composants en colonnes séparées :
+    </p>
+    <div class="measure">
+      <span class="hl">ADEME</span><span>33063_9315_00051</span>
+      <span class="arrow">↔</span>
+      <span class="hl">DVF</span><span>33063 · 9315 · 51</span>
+    </div>
+    <p>
+      « 51 Cours Victor Hugo » et « 51 crs Victor-Hugo » n’ont jamais à être rapprochés par
+      similarité. C’est la principale source de faux positifs de ce type d’outil, et elle
+      disparaît. Bonus mesuré : sur 200 lignes ADEME, 200 portaient déjà un géocodage BAN —
+      la Base Adresse Nationale n’est plus sollicitée qu’en repli.
+    </p>
+  </div>
+</section>
+
+<hr>
+
+<section>
+  <div class="sec-head"><span class="sec-num">03</span><h2>Le modèle de scoring</h2></div>
+  <p>
+    Ce qu’on prédit, exactement : la probabilité qu’un bien fasse l’objet d’une
+    <strong>mise en vente observable</strong> dans les douze mois. Cette cible est vérifiable a
+    posteriori sur données publiques — donc le modèle est calibrable et falsifiable
+    <em>sans aucun client</em>.
+  </p>
+
+  <div class="signals">
+    <div class="sig">
+      <div class="sig-label">
+        <span class="sig-name">Fraîcheur du diagnostic</span>
+        <span class="sig-src">ADEME</span>
+        <span class="bar" style="width:100%"></span>
+      </div>
+      <span class="sig-w">45</span>
+    </div>
+    <div class="sig">
+      <div class="sig-label">
+        <span class="sig-name">Pression réglementaire de la classe</span>
+        <span class="sig-src">ADEME · mesuré à 1,15×</span>
+        <span class="bar" style="width:11%"></span>
+      </div>
+      <span class="sig-w">5</span>
+    </div>
+    <div class="sig">
+      <div class="sig-label">
+        <span class="sig-name">Absence d’annonce active</span>
+        <span class="sig-src">Pige</span>
+        <span class="bar" style="width:40%"></span>
+      </div>
+      <span class="sig-w">12</span>
+    </div>
+    <div class="sig">
+      <div class="sig-label">
+        <span class="sig-name">Durée de détention estimée</span>
+        <span class="sig-src">DVF · observable ≤ 4 ans seulement</span>
+        <span class="bar dvf" style="width:18%"></span>
+      </div>
+      <span class="sig-w">8</span>
+    </div>
+    <div class="sig">
+      <div class="sig-label">
+        <span class="sig-name">Dynamique des ventes du quartier</span>
+        <span class="sig-src">DVF</span>
+        <span class="bar dvf" style="width:33.3%"></span>
+      </div>
+      <span class="sig-w">10</span>
+    </div>
+    <div class="sig">
+      <div class="sig-label">
+        <span class="sig-name">Évolution du prix au m²</span>
+        <span class="sig-src">DVF</span>
+        <span class="bar dvf" style="width:26.6%"></span>
+      </div>
+      <span class="sig-w">8</span>
+    </div>
+    <div class="sig">
+      <div class="sig-label">
+        <span class="sig-name">Baisse de prix constatée</span>
+        <span class="sig-src">Pige</span>
+        <span class="bar" style="width:26.6%"></span>
+      </div>
+      <span class="sig-w">8</span>
+    </div>
+    <div class="sig">
+      <div class="sig-label">
+        <span class="sig-name">Écart au DPE médian du quartier</span>
+        <span class="sig-src">ADEME</span>
+        <span class="bar" style="width:9%"></span>
+      </div>
+      <span class="sig-w">4</span>
+    </div>
+    <div class="sig-foot">
+      <span class="key"><i class="a"></i> disponible partout</span>
+      <span class="key"><i class="d"></i> absent en Alsace-Moselle — 30 pts</span>
+      <span>Somme = 100 · barème v2.0.0-calibré</span>
+    </div>
+  </div>
+
+  <h3>La classe énergétique, pondérée par le calendrier locatif</h3>
+  <p>
+    Le décrochage entre E et F n’est pas esthétique : il traduit l’interdiction de location des
+    passoires thermiques — G depuis 2025, F en 2028. Le propriétaire bailleur arbitre alors
+    entre travaux et vente.
+  </p>
+  <div class="dpe-scale">
+    <div class="dpe" style="background:var(--dpe-a)"><b>A</b><span>0,05</span></div>
+    <div class="dpe" style="background:var(--dpe-b)"><b>B</b><span>0,05</span></div>
+    <div class="dpe" style="background:var(--dpe-c)"><b>C</b><span>0,10</span></div>
+    <div class="dpe" style="background:var(--dpe-d)"><b>D</b><span>0,20</span></div>
+    <div class="dpe" style="background:var(--dpe-e)"><b>E</b><span>0,45</span></div>
+    <div class="dpe" style="background:var(--dpe-f)"><b>F</b><span>0,85</span></div>
+    <div class="dpe" style="background:var(--dpe-g)"><b>G</b><span>1,00</span></div>
+  </div>
+
+  <h3>Le backtest a été exécuté — voici ce qu’il dit</h3>
+  <p>
+    Protocole : on se place au <strong>30 juin 2023</strong>, on score avec les seules données
+    disponibles à cette date, et on observe les mutations DVF des douze mois suivants. `T0`
+    n’est pas arbitraire : la fenêtre d’observation doit être <em>entièrement publiée</em>,
+    sinon les labels sont tronqués et le modèle paraît mauvais à tort.
+  </p>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>Typologie</th><th>n</th><th>AUC</th><th>Lift décile 1</th><th>Verdict</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Ville moyenne (Limoges, Angoulême)</td><td>3 237</td><td>0,759</td><td><strong>2,70×</strong></td><td><span class="pill yes">Commercialisable</span></td></tr>
+        <tr><td>Rural (10 communes de Dordogne)</td><td>1 997</td><td>0,723</td><td>2,26×</td><td><span class="pill warn">À retravailler</span></td></tr>
+        <tr><td>Métropole tendue (Bordeaux)</td><td>3 880</td><td>0,689</td><td>2,03×</td><td><span class="pill warn">À retravailler</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>
+    Seuils fixés <em>à l’avance</em> : 2,5× pour commercialiser, 2,0× pour arrêter, AUC ≥ 0,68.
+    Les trois typologies franchissent le plancher et le seuil d’AUC ; une seule atteint le seuil
+    de commercialisation.
+  </p>
+
+  <div class="finding">
+    <span class="finding-tag">Ce que ça change pour la mise sur le marché</span>
+    <h3>Le signal discrimine mieux en ville moyenne qu’en métropole</h3>
+    <p>
+      2,70× à Limoges et Angoulême, contre 2,03× à Bordeaux. Dans un marché tendu où tout se
+      vend, un score sépare mal ; dans une ville moyenne, le diagnostic récent distingue
+      réellement. <strong>Conséquence : ouvrir sur les villes moyennes, pas sur Bordeaux, Lyon
+      ou Paris.</strong> C’est l’inverse de l’intuition commerciale.
+    </p>
+  </div>
+
+  <div class="finding alert">
+    <span class="finding-tag">Prior réfuté</span>
+    <h3>« Passoire thermique = vendeur » ne tient pas</h3>
+    <p>
+      Le diagnostic par signal est sans appel : classe A-B 1,13×, C 0,94×, D 0,96×, E 1,11×,
+      F 1,15×, et <strong>G à 0,69× — sous le taux de base</strong>. Les passoires ne se vendent
+      pas plus que les autres.
+    </p>
+    <p>
+      Le poids de la classe énergétique passe de <strong>15 à 5</strong>, conservé au titre du
+      calendrier réglementaire (interdiction de location F en 2028), <em>pas</em> de la preuve
+      empirique. À l’inverse, la fraîcheur du DPE porte tout le signal (1,82× à 0-3 mois contre
+      0,33× au-delà de 18 mois) : son poids monte de 30 à 45.
+    </p>
+  </div>
+
+  <h3>Deux artefacts de méthode, corrigés en route</h3>
+  <p>
+    Le premier passage donnait un taux de base de <strong>21,5 %</strong> et une AUC de
+    <strong>0,430</strong> — pire que le hasard. Deux causes, toutes deux méthodologiques :
+  </p>
+  <ul>
+    <li><strong>Le label à l’adresse est invalide pour les appartements.</strong> Un immeuble de
+      vingt logements connaît presque toujours une mutation dans l’année : le label mesurait la
+      taille de l’immeuble, pas l’intention d’un propriétaire.</li>
+    <li><strong>L’univers était tronqué sur la fraîcheur.</strong> Sur 36 099 DPE antérieurs à
+      `T0`, seuls les 15 000 plus récents étaient chargés — ce qui supprimait toute variance sur
+      le signal dominant.</li>
+  </ul>
+  <p>
+    Après correction, la courbe de déciles devient proprement décroissante. Ces deux pièges
+    n’étaient visibles qu’en exécutant le backtest : aucun n’apparaissait sur le papier.
+  </p>
+
+<hr>
+
+<section>
+  <div class="sec-head"><span class="sec-num">04</span><h2>La conformité, écrite en code exécutable</h2></div>
+  <p>
+    Le risque juridique n°1 n’est pas « le RGPD en général » : c’est la réutilisation
+    commerciale de données publiques pour une prospection ciblée à l’adresse. La licence Etalab
+    autorise la réutilisation ; elle n’exonère pas du RGPD, et la CNIL juge illicite ce qui
+    dépasse l’<em>attente raisonnable</em> de la personne.
+  </p>
+  <p>
+    D’où une politique de contact qui n’est pas un réglage désactivable, mais un objet du
+    domaine qui <strong>refuse</strong> :
+  </p>
+
+  <div class="tablewrap">
+    <table>
+      <thead>
+        <tr><th>Canal vers un propriétaire inconnu</th><th>Verdict</th><th>Fondement</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Téléphone</td><td><span class="pill warn">Selon régime</span></td><td>Consentement, contrat en cours, ou intérêt légitime assumé</td></tr>
+        <tr><td>SMS</td><td><span class="pill no">Opt-in requis</span></td><td>Art. L34-5 CPCE</td></tr>
+        <tr><td>E-mail</td><td><span class="pill no">Opt-in requis</span></td><td>Art. L34-5 CPCE</td></tr>
+        <tr><td>Courrier adressé</td><td><span class="pill yes">Autorisé</span></td><td>Intérêt légitime + information art. 14</td></tr>
+        <tr><td>Boîtage non adressé</td><td><span class="pill yes">Autorisé</span></td><td>Aucune donnée personnelle traitée</td></tr>
+        <tr><td>Porte-à-porte</td><td><span class="pill yes">Autorisé</span></td><td>Démarchage à domicile encadré</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>
+    Précision qui compte, car elle est souvent mal comprise : <strong>l’interdiction porte sur
+    l’appel de prospection, pas sur la conclusion d’une vente</strong>. Proposer une estimation
+    entre dans son champ ; la nullité du contrat est une conséquence, pas le périmètre. Deux
+    exceptions subsistent — le consentement préalable et le contrat en cours.
+  </p>
+  <p>
+    Le produit rend donc le choix explicite plutôt que de le trancher : régime affiché en clair
+    dans l’administration, base légale revendiquée attachée à chaque approche, mention de
+    responsabilité journalisée quand l’agence appelle sur intérêt légitime.
+  </p>
+  <p>
+    Deux garanties d’ordonnancement, testées : la politique décide <em>avant</em> tout appel au
+    modèle de langage — pas un jeton dépensé, pas un brouillon illicite dans les logs — et le
+    bloc d’information article 14 est concaténé <em>après</em> génération puis vérifié. Un
+    modèle ne peut ni le réécrire, ni l’omettre.
+  </p>
+  <p>
+    Enfin, une opposition vaut pour <strong>toutes les agences</strong> de la plateforme, et un
+    bien opposé n’est pas scoré du tout : ne pas calculer est plus simple à défendre que
+    calculer sans afficher.
+  </p>
+</section>
+
+<hr>
+
+<section>
+  <div class="sec-head"><span class="sec-num">05</span><h2>Ce que ça donne sur données réelles</h2></div>
+  <p>
+    La chaîne complète tourne sans base de données ni clé d’API, sur les sources publiques
+    ouvertes :
+  </p>
+
+  <div class="term">
+    <div class="term-bar">npx tsx scripts/demo-scoring.ts 33063</div>
+<pre><span class="dim">ADEME · 200 diagnostics · 200 déjà géocodés à l'adresse
+DVF   · 4905 ventes sur 12 mois contre 3997 l'année précédente · prix/m2 -0.4 %</span>
+
+<span class="hl"> 1. score  79 · confiance  77 · ELEVE · DPE E · 3 Rue Joseph Brunet 33300 Bordeaux</span>
+     + 40.0 pts · DPE réalisé le 10/08/2026 (il y a 0 mois)          [ADEME]
+     + 16.0 pts · Aucune annonce active détectée                     [PIGE]
+     + 10.9 pts · Ventes du quartier +23 % sur 12 mois               [DVF]
+     <span class="dim">canaux autorisés : POSTAL_MAIL, UNADDRESSED_FLYER, DOOR_TO_DOOR</span>
+
+<span class="hl"> 3. score  76 · confiance  69 · ELEVE · DPE F · 61 Cours Aristide Briand 33000</span>
+     + 34.5 pts · DPE réalisé le 10/08/2026 (il y a 0 mois)          [ADEME]
+     + 14.7 pts · Classe énergétique F                               [ADEME]
+     + 13.8 pts · Aucune annonce active détectée                     [PIGE]
+     <span class="dim">canaux autorisés : POSTAL_MAIL, UNADDRESSED_FLYER, DOOR_TO_DOOR</span></pre>
+  </div>
+
+  <p>
+    Chaque raison porte sa <strong>source et sa date</strong>. Ce n’est pas de la décoration :
+    un négociateur qui cite une information sans savoir de quand elle date se décrédibilise en
+    rendez-vous.
+  </p>
+</section>
+
+<hr>
+
+<section>
+  <div class="sec-head"><span class="sec-num">06</span><h2>État réel du chantier</h2></div>
+
+  <div class="build">
+    <div class="brow"><span>Moteur de scoring pur, versionné, explicable</span><span class="mark done">livré</span></div>
+    <div class="brow"><span>Backtest de calibration sur données réelles</span><span class="mark done">exécuté</span></div>
+    <div class="brow"><span>Radar DPE · Quartier · Annonces · Opportunités</span><span class="mark done">livré</span></div>
+    <div class="brow"><span>Copilote IA — courrier, e-mail, SMS, trame d’appel</span><span class="mark done">livré</span></div>
+    <div class="brow"><span>Politique de contact + régimes par agence</span><span class="mark done">livré</span></div>
+    <div class="brow"><span>CRM pipeline + cloisonnement multi-agences</span><span class="mark done">livré</span></div>
+    <div class="brow"><span>Alertes temps réel · connecteurs Apimo / Hektor / Netty</span><span class="mark done">livré</span></div>
+    <div class="brow"><span>Interface Next.js 15 + Tailwind, 7 écrans</span><span class="mark done">livré</span></div>
+    <div class="brow"><span>Stripe — Starter / Pro / Réseau, essai 30 jours</span><span class="mark done">livré</span></div>
+    <div class="brow"><span>Clerk · Redis · Docker · Mapbox · PWA terrain</span><span class="mark done">livré</span></div>
+    <div class="brow"><span>API ouverte v1 — clés hachées, quota par agence</span><span class="mark done">livré</span></div>
+    <div class="brow"><span>Application mobile Expo — domaine partagé avec le web</span><span class="mark done">livré</span></div>
+    <div class="brow"><span>Modèle appris (régression logistique monotone)</span><span class="mark todo">prochaine itération</span></div>
+  </div>
+
+  <h3>Une seule définition du score, deux surfaces</h3>
+  <p>
+    L’application mobile importe directement <code>src/domain</code>. C’est le bénéfice concret
+    de l’architecture hexagonale : le domaine est du TypeScript pur, sans dépendance, donc
+    consommable tel quel par React Native. Les bandes de score, les seuils de confiance et les
+    règles de couverture territoriale sont <strong>identiques des deux côtés</strong> — il
+    n’existe pas deux définitions de ce qu’est un score « élevé ».
+  </p>
+  <p>
+    Elle ne parle pas à la base : elle consomme la même API ouverte v1 que les connecteurs des
+    logiciels d’agence. Une seule surface à sécuriser. Le hors-ligne est assumé et
+    <em>signalé</em> — « données il y a 3 h » — plutôt que masqué : présenter des données d’hier
+    comme fraîches ferait citer une information périmée en clientèle.
+  </p>
+
+  <h3>La dette qui reste</h3>
+  <p>
+    <strong>Le Radar Annonces est résolu par l’import, pas par le scraping.</strong> La
+    quasi-totalité des agences dispose déjà d’un outil de pige sous licence, et ces licences
+    portent les autorisations. Le produit importe l’export du client et le rapproche par
+    l’identifiant BAN. Absence de ligne dans la pige signifie <em>absence d’information</em>,
+    jamais « pas d’annonce » : le signal n’est alors pas émis du tout, et la confiance baisse.
+  </p>
+  <p>
+    <strong>Le backtest ne mesure pas le produit complet.</strong> Le signal de pige n’a pas de
+    donnée historique : le décile de tête mesuré contient des biens <em>déjà en vente</em> à
+    `T0`, que le produit exclurait. Les chiffres sont donc un <strong>minorant</strong> de la
+    performance sur l’objectif réel — trouver les biens avant l’annonce.
+  </p>
+  <p>
+    <strong>Les appartements ne sont pas calibrés.</strong> La cible n’y est pas observable avec
+    les données publiques. Le produit les score, mais leur calibration passera par les retours
+    d’issue des agences, pas par le backtest.
+  </p>
+</section>
+
+<hr>
+
+<section>
+  <div class="sec-head"><span class="sec-num">07</span><h2>Ce qu’il reste à trancher</h2></div>
+  <p>
+    Quatre points relèvent du conseil juridique, pas de l’ingénierie, et sont marqués comme tels
+    dans le dossier :
+  </p>
+  <ul>
+    <li>L’intérêt légitime tient-il face à un profilage prédictif sur données ADEME, ou faut-il
+      restreindre le ciblage aux biens portant un signal d’intention explicite ?</li>
+    <li>Le blocage à l’adresse suffit-il à honorer une opposition, ou faut-il un registre
+      nominatif — ce qui recréerait précisément la donnée identifiante qu’on évite ?</li>
+    <li>Sous-traitant ou responsable conjoint ? Le fait que nous déterminions le modèle de
+      scoring plaide pour la responsabilité conjointe.</li>
+    <li>Faut-il vendre en Alsace-Moselle à tarif réduit, ou ne pas y vendre tant que le produit
+      y reste amputé de trois signaux ?</li>
+    <li>Sous le régime « responsabilité de l’agence », l’intérêt légitime tient-il pour un
+      appel de prospection, alors que le texte du 11 août 2026 ne prévoit que le consentement
+      et le contrat en cours ?</li>
+  </ul>
+  <p>
+    Le dernier point est commercial autant que juridique — et c’est celui qui touche le plus
+    directement un déploiement alsacien.
+  </p>
+</section>
+
+<footer>
+  <div>
+    <b>DPE Radar AI</b> · dossier de conception · 20 août 2026<br>
+    Dépôt local <code>~/Documents/dpe-radar-ai</code> · 263 tests · Next.js 15 + Expo · barème v2.0.0-calibré<br><br>
+    <b>Sources de données —</b> ADEME, Observatoire DPE, jeu <code>dpe03existant</code>, licence Etalab 2.0 ·
+    DVF, <code>files.data.gouv.fr/geo-dvf</code> · Base Adresse Nationale.<br><br>
+    <b>Avertissement —</b> le volet conformité est un document d’ingénierie, pas un avis juridique.
+    Il doit être validé par un avocat spécialisé avant toute commercialisation.
+  </div>
+</footer>
+
+</div>
+
+</body>
+</html>

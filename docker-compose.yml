@@ -1,0 +1,101 @@
+version: '3.9'
+
+services:
+  # PostgreSQL + PostGIS
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: dpe-postgres
+    environment:
+      POSTGRES_DB: dpe_radar
+      POSTGRES_USER: dpe_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_password}
+      POSTGRES_INITDB_ARGS: "-c shared_preload_libraries=pg_cron"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dpe_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Bull MQ
+  redis:
+    image: redis:7.2-alpine
+    container_name: dpe-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Obscura CDP Server (headless browser)
+  obscura-cdp:
+    build:
+      context: .
+      dockerfile: Dockerfile.obscura-cdp
+    container_name: dpe-obscura-cdp
+    ports:
+      - "9222:9222"
+    environment:
+      RUST_LOG: info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9222/json/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      - redis
+
+  # Rust Worker (Bull MQ consumer)
+  dpe-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.rust-worker
+    container_name: dpe-worker
+    environment:
+      DATABASE_URL: postgresql://dpe_user:${DB_PASSWORD:-secure_password}@postgres:5432/dpe_radar
+      REDIS_URL: redis://redis:6379
+      OBSCURA_CDP_URL: http://obscura-cdp:9222
+      RUST_LOG: info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      obscura-cdp:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Next.js App (existing service)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dpe-app
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://dpe_user:${DB_PASSWORD:-secure_password}@postgres:5432/dpe_radar
+      REDIS_URL: redis://redis:6379
+      NEXT_PUBLIC_API_URL: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: dpe-radar-network
+    driver: bridge

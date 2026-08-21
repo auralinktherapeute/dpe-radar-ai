@@ -1,0 +1,215 @@
+# docker-compose.yml — DPE Radar AI (Développement local)
+# Usage: docker-compose up -d
+# Stack complète: Next.js app, PostgreSQL + PostGIS, Redis, Worker, Mailpit
+
+version: "3.9"
+
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # 1. APPLICATION PRINCIPALE (Next.js 15)
+  # ═══════════════════════════════════════════════════════════════
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+    container_name: dpe-radar-app
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/dpe_radar?schema=public&connection_limit=10
+      - REDIS_URL=redis://redis:6379
+      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADEME_API_KEY=${ADEME_API_KEY}
+      - DVF_API_KEY=${DVF_API_KEY}
+      - MAPBOX_ACCESS_TOKEN=${MAPBOX_ACCESS_TOKEN}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - SMTP_HOST=mailpit
+      - SMTP_PORT=1025
+      - SMTP_FROM=noreply@dpe-radar.local
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+      - NODE_ENV=development
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      mailpit:
+        condition: service_started
+    volumes:
+      - ./src:/app/src:ro
+      - ./prisma:/app/prisma:ro
+      - ./public:/app/public:ro
+    networks:
+      - dpe-radar-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ═══════════════════════════════════════════════════════════════
+  # 2. WORKER (Bull MQ — tâches asynchrones)
+  # ═══════════════════════════════════════════════════════════════
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: dpe-radar-worker
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/dpe_radar?schema=public&connection_limit=5
+      - REDIS_URL=redis://redis:6379
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ADEME_API_KEY=${ADEME_API_KEY}
+      - DVF_API_KEY=${DVF_API_KEY}
+      - NODE_ENV=development
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./src:/app/src:ro
+      - ./prisma:/app/prisma:ro
+    networks:
+      - dpe-radar-network
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # 3. BASE DE DONNÉES (PostgreSQL 16 + PostGIS 3.4)
+  # ═══════════════════════════════════════════════════════════════
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: dpe-radar-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: dpe_radar
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - dpe-radar-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dpe_radar"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # 4. CACHE & QUEUE (Redis 7)
+  # ═══════════════════════════════════════════════════════════════
+  redis:
+    image: redis:7-alpine
+    container_name: dpe-radar-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - dpe-radar-network
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # 5. MAILPIT (SMTP de développement + interface web)
+  # ═══════════════════════════════════════════════════════════════
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: dpe-radar-mailpit
+    ports:
+      - "8025:8025"  # Interface web
+      - "1025:1025"  # SMTP
+    volumes:
+      - mailpit_data:/data
+    environment:
+      - MP_DATABASE=/data/mailpit.db
+      - MP_MAX_MESSAGES=5000
+    networks:
+      - dpe-radar-network
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # 6. MINIO (Stockage S3-compatible pour exports CSV/PDF)
+  # ═══════════════════════════════════════════════════════════════
+  minio:
+    image: minio/minio:latest
+    container_name: dpe-radar-minio
+    ports:
+      - "9000:9000"  # API S3
+      - "9001:9001"  # Console web
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio_data:/data
+    networks:
+      - dpe-radar-network
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ═══════════════════════════════════════════════════════════════
+  # 7. ADMINER (Interface DB — dev uniquement)
+  # ═══════════════════════════════════════════════════════════════
+  adminer:
+    image: adminer:latest
+    container_name: dpe-radar-adminer
+    ports:
+      - "8080:8080"
+    environment:
+      - ADMINER_DEFAULT_SERVER=db
+    networks:
+      - dpe-radar-network
+    profiles:
+      - tools
+
+  # ═══════════════════════════════════════════════════════════════
+  # 8. REDIS COMMANDER (Interface Redis — dev uniquement)
+  # ═══════════════════════════════════════════════════════════════
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: dpe-radar-redis-commander
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    networks:
+      - dpe-radar-network
+    profiles:
+      - tools
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  mailpit_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  dpe-radar-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

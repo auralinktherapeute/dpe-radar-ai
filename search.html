@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DPE Radar AI - Recherche par Région</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a0a2e 0%, #2d1b4e 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 30px 0;
+        }
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #a855f7, #22d3ee);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .search-card {
+            background: rgba(45, 27, 78, 0.8);
+            border: 1px solid rgba(168, 85, 247, 0.25);
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(12px);
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #22d3ee;
+        }
+        input, select {
+            width: 100%;
+            padding: 12px;
+            background: rgba(61, 36, 96, 0.5);
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            border-radius: 6px;
+            color: #ffffff;
+            font-size: 1em;
+        }
+        input::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: rgba(168, 85, 247, 0.6);
+            background: rgba(61, 36, 96, 0.7);
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        button {
+            background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+            color: white;
+            padding: 14px 28px;
+            border: none;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+        button:hover {
+            box-shadow: 0 0 24px rgba(139, 92, 246, 0.4);
+            transform: translateY(-2px);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 6px;
+            display: none;
+        }
+        .status.success {
+            background: rgba(34, 211, 238, 0.2);
+            border: 1px solid rgba(34, 211, 238, 0.5);
+            color: #22d3ee;
+            display: block;
+        }
+        .status.error {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.5);
+            color: #fca5a5;
+            display: block;
+        }
+        .status.loading {
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid rgba(245, 158, 11, 0.5);
+            color: #fcd34d;
+            display: block;
+        }
+        .results {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .result-card {
+            background: rgba(45, 27, 78, 0.8);
+            border: 1px solid rgba(168, 85, 247, 0.25);
+            border-radius: 10px;
+            padding: 20px;
+            backdrop-filter: blur(12px);
+        }
+        .result-card h3 {
+            color: #22d3ee;
+            margin-bottom: 10px;
+        }
+        .result-card p {
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+        .score-badge {
+            display: inline-block;
+            background: rgba(139, 92, 246, 0.3);
+            padding: 6px 12px;
+            border-radius: 20px;
+            color: #a855f7;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+        .instructions {
+            background: rgba(45, 27, 78, 0.8);
+            border: 1px solid rgba(168, 85, 247, 0.25);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+        .instructions h3 {
+            color: #22d3ee;
+            margin-bottom: 15px;
+        }
+        .instructions ol {
+            margin-left: 20px;
+            line-height: 1.8;
+        }
+        .instructions li {
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 10px;
+        }
+        .regions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .region-btn {
+            background: rgba(139, 92, 246, 0.2);
+            border: 1px solid rgba(168, 85, 247, 0.3);
+            color: #a855f7;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .region-btn:hover {
+            background: rgba(139, 92, 246, 0.4);
+            border-color: rgba(168, 85, 247, 0.6);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 DPE Radar AI - Recherche Régionale</h1>
+            <p>Trouvez les meilleures opportunités immobilières par région et ville</p>
+        </header>
+
+        <div class="instructions">
+            <h3>📋 Comment ça marche ?</h3>
+            <ol>
+                <li>Sélectionnez une région (Alsace, Bourgogne, Bretagne...)</li>
+                <li>Entrez une ville ou un code postal</li>
+                <li>Cliquez sur "Lancer la recherche"</li>
+                <li>Les résultats s'affichent automatiquement</li>
+            </ol>
+            <p style="margin-top: 15px; color: rgba(255, 255, 255, 0.6);">💡 Les données DPE sont récupérées en temps réel et analysées par le worker Rust</p>
+        </div>
+
+        <div class="search-card">
+            <h2 style="margin-bottom: 20px;">Paramètres de Recherche</h2>
+
+            <div class="form-group">
+                <label>Région</label>
+                <select id="region">
+                    <option value="">-- Sélectionnez une région --</option>
+                    <option value="alsace">Alsace (67, 68)</option>
+                    <option value="bourgogne">Bourgogne-Franche-Comté</option>
+                    <option value="bretagne">Bretagne</option>
+                    <option value="auvergne">Auvergne-Rhône-Alpes</option>
+                    <option value="occitanie">Occitanie</option>
+                    <option value="paca">Provence-Alpes-Côte d'Azur</option>
+                    <option value="idf">Île-de-France</option>
+                    <option value="hauts-de-france">Hauts-de-France</option>
+                    <option value="nouvelle-aquitaine">Nouvelle-Aquitaine</option>
+                    <option value="pays-de-loire">Pays de la Loire</option>
+                </select>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Ville</label>
+                    <input type="text" id="city" placeholder="Ex: Strasbourg, Lyon..." />
+                </div>
+                <div class="form-group">
+                    <label>Code Postal (optionnel)</label>
+                    <input type="text" id="zip" placeholder="Ex: 75001" />
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Grade DPE Min</label>
+                    <select id="dpe_min">
+                        <option value="">Tous</option>
+                        <option value="A">A (Excellent)</option>
+                        <option value="B">B (Très bon)</option>
+                        <option value="C">C (Bon)</option>
+                        <option value="D">D (Moyen)</option>
+                        <option value="E">E (Mauvais)</option>
+                        <option value="F">F (Très mauvais)</option>
+                        <option value="G">G (Très très mauvais)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Score Min (0-100)</label>
+                    <input type="number" id="score_min" placeholder="50" min="0" max="100" />
+                </div>
+            </div>
+
+            <button onclick="launchSearch()">🚀 Lancer la recherche</button>
+
+            <div id="status" class="status"></div>
+        </div>
+
+        <div id="results" class="results"></div>
+    </div>
+
+    <script>
+        function launchSearch() {
+            const region = document.getElementById('region').value;
+            const city = document.getElementById('city').value;
+            const zip = document.getElementById('zip').value;
+            const dpe_min = document.getElementById('dpe_min').value;
+            const score_min = document.getElementById('score_min').value;
+
+            if (!region && !city) {
+                showStatus('Veuillez sélectionner une région ou entrer une ville', 'error');
+                return;
+            }
+
+            showStatus('⏳ Lancement de la recherche...', 'loading');
+
+            // Simuler une requête (en production, ça appellerait le backend)
+            setTimeout(() => {
+                const params = {
+                    region: region,
+                    city: city,
+                    zip: zip,
+                    dpe_min: dpe_min,
+                    score_min: score_min
+                };
+
+                console.log('Paramètres de recherche:', params);
+
+                // Afficher les résultats simulés
+                showStatus('✅ Recherche complétée ! Résultats affichés ci-dessous.', 'success');
+                displayResults(params);
+            }, 1500);
+        }
+
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = 'status ' + type;
+        }
+
+        function displayResults(params) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '';
+
+            // Données de test
+            const mockResults = [
+                {
+                    id: 'prop-' + Math.random().toString(36).substr(2, 9),
+                    address: `${params.city || 'Strasbourg'}, ${params.region || 'Alsace'}`,
+                    dpe_grade: 'G',
+                    dpe_score: 420,
+                    score: 53.36
+                },
+                {
+                    id: 'prop-' + Math.random().toString(36).substr(2, 9),
+                    address: `${params.city || 'Colmar'}, ${params.region || 'Alsace'}`,
+                    dpe_grade: 'F',
+                    dpe_score: 330,
+                    score: 62.14
+                },
+                {
+                    id: 'prop-' + Math.random().toString(36).substr(2, 9),
+                    address: `${params.city || 'Mulhouse'}, ${params.region || 'Alsace'}`,
+                    dpe_grade: 'G',
+                    dpe_score: 450,
+                    score: 48.92
+                }
+            ];
+
+            mockResults.forEach(result => {
+                const card = document.createElement('div');
+                card.className = 'result-card';
+                card.innerHTML = `
+                    <h3>${result.address}</h3>
+                    <p><strong>Grade DPE:</strong> ${result.dpe_grade}</p>
+                    <p><strong>Score DPE:</strong> ${result.dpe_score}</p>
+                    <p><strong>Opportunité:</strong> ${result.score}/100</p>
+                    <span class="score-badge">Score: ${result.score}</span>
+                `;
+                resultsDiv.appendChild(card);
+            });
+        }
+
+        // Quick search buttons
+        document.addEventListener('DOMContentLoaded', function() {
+            // Pré-remplir Alsace par défaut
+            document.getElementById('region').value = 'alsace';
+        });
+    </script>
+</body>
+</html>

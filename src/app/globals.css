@@ -1,0 +1,33 @@
+@import "tailwindcss";
+/* Feuille de style Mapbox : chargee globalement, l'import TS ne la type pas. */
+@import "mapbox-gl/dist/mapbox-gl.css";
+
+/*
+  Palette derivee de l'etiquette DPE officielle (arrete du 31 mars 2021).
+  La couleur vive est reservee aux classes energetiques et aux etats : c'est
+  la seule chose qu'un negociateur doit reperer d'un coup d'œil dans une liste.
+*/
+@theme {
+  --color-ground: #f6f7f9;
+  --color-surface: #ffffff;
+  --color-ink: #12161c;
+  --color-muted: #5d6874;
+  --color-line: #dde2e8;
+  --color-accent: #0f5e5c;
+
+  --color-dpe-a: #319a69;
+  --color-dpe-b: #4aad70;
+  --color-dpe-c: #96c751;
+  --color-dpe-d: #e8d54a;
+  --color-dpe-e: #e9ad3c;
+  --color-dpe-f: #e07a35;
+  --color-dpe-g: #cf2f26;
+
+  --font-display: "Bricolage Grotesque", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+body {
+  background: var(--color-ground);
+  color: var(--color-ink);
+}

@@ -1,0 +1,755 @@
+// schema.prisma — DPE Radar AI
+// Stack: PostgreSQL 16 + PostGIS 3.4 | Prisma 5.x
+// Génération: npx prisma generate && npx prisma migrate dev
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions", "fullTextSearch", "fullTextIndex"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis(schema: "public")]
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 1. AUTHENTIFICATION & MULTI-TENANT
+// ═══════════════════════════════════════════════════════════════
+
+model Agency {
+  id              String           @id @default(cuid())
+  name            String
+  siret           String           @unique
+  address         String
+  city            String
+  zipCode         String
+  lat             Float
+  lng             Float
+
+  // Géométrie PostGIS pour requêtes spatiales
+  location        Unsupported("geometry(Point, 4326)")?
+
+  // CRM & intégrations
+  crmProvider     CrmProvider?
+  crmConfig       Json?            // { webhookUrl, apiKey, pipelineId, customFields }
+
+  // Abonnement
+  subscription    SubscriptionTier @default(STARTER)
+  stripeCustomerId String?         @unique
+  stripeSubscriptionId String?     @unique
+  subscriptionStatus SubscriptionStatus @default(TRIALING)
+  trialEndsAt     DateTime?
+  maxUsers        Int              @default(3)
+  maxProperties   Int              @default(500)
+
+  // Métadonnées
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Relations
+  users           User[]
+  properties      Property[]
+  alerts          Alert[]
+  outreachLogs    OutreachLog[]
+  auditLogs       AuditLog[]
+  billingEvents   BillingEvent[]
+
+  @@index([location], type: Gist)
+  @@index([subscriptionStatus])
+  @@index([createdAt])
+}
+
+model User {
+  id            String    @id @default(cuid())
+  clerkId       String    @unique
+  email         String    @unique
+  firstName     String
+  lastName      String
+  phone         String?
+  avatarUrl     String?
+
+  role          UserRole  @default(NEGOTIATOR)
+  isActive      Boolean   @default(true)
+
+  agencyId      String
+  agency        Agency    @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  // Préférences
+  preferences   Json?     // { defaultMapZoom, emailNotifications, smsNotifications }
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  assignedProperties Property[] @relation("AssignedNegotiator")
+  outreachLogs       OutreachLog[]
+  alertReads         AlertRead[]
+
+  @@index([agencyId])
+  @@index([clerkId])
+  @@index([email])
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  NEGOTIATOR
+}
+
+enum SubscriptionTier {
+  STARTER
+  PRO
+  NETWORK
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+}
+
+enum CrmProvider {
+  APIMO
+  HEKTOR
+  NETTY
+  EFFICITY
+  SAFTI
+  GENERIC_WEBHOOK
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 2. IMMOBILIER & DPE
+// ═══════════════════════════════════════════════════════════════
+
+model Property {
+  id                String   @id @default(cuid())
+
+  // Identifiants publics
+  ademeDpeId        String?  @unique
+  parcelleCadastre  String?
+  banId             String?  @unique  // Identifiant Base Adresse Nationale
+
+  // Adresse normalisée (BAN)
+  address           String
+  complement        String?
+  city              String
+  zipCode           String
+  department        String   // Département pour stats agrégées
+  region            String?
+  lat               Float
+  lng               Float
+  location          Unsupported("geometry(Point, 4326)")?
+  irisCode          String?  // Code IRIS INSEE
+
+  // Caractéristiques
+  propertyType      PropertyType
+  surfaceM2         Float?
+  landSurfaceM2     Float?
+  constructionYear  Int?
+  nbRooms           Int?
+  nbBedrooms        Int?
+  nbFloors          Int?
+  floorNumber       Int?
+  hasElevator       Boolean?
+  hasParking        Boolean?
+  hasTerrace        Boolean?
+  hasGarden         Boolean?
+
+  // Estimation
+  estimatedValue    Float?   // Estimation automatique (DVF + IA)
+  estimatedAt       DateTime?
+
+  // Relations
+  agencyId          String
+  agency            Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  assignedToId      String?
+  assignedTo        User?    @relation("AssignedNegotiator", fields: [assignedToId], references: [id])
+
+  dpeDiagnostics    DpeDiagnostic[]
+  opportunityScores OpportunityScore[]
+  marketSignals     MarketSignal[]
+  outreachLogs      OutreachLog[]
+  propertyNotes     PropertyNote[]
+  pipelineStages    PipelineStage[]
+
+  // Statut dans le pipeline
+  pipelineStatus    PipelineStatus @default(NEW)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([agencyId])
+  @@index([assignedToId])
+  @@index([lat, lng])
+  @@index([location], type: Gist)
+  @@index([zipCode])
+  @@index([irisCode])
+  @@index([propertyType])
+  @@index([pipelineStatus])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([banId])
+}
+
+enum PropertyType {
+  APPARTEMENT
+  MAISON
+  IMMEUBLE
+  TERRAIN
+  PARKING
+  COMMERCE
+}
+
+enum PipelineStatus {
+  NEW           // Nouveau détecté
+  QUALIFIED     // Qualifié par l'agent
+  CONTACTED     // Premier contact effectué
+  MEETING       // Rendez-vous fixé
+  MANDATE       // Mandat signé
+  LOST          // Perdu / archivé
+  EXCLUDED      // Exclu (ne pas contacter)
+}
+
+model DpeDiagnostic {
+  id                String   @id @default(cuid())
+  propertyId        String
+  property          Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  // Données ADEME
+  ademeReference    String   @unique
+  dateDiagnostic    DateTime
+  dateExpiration    DateTime?
+
+  // Classes
+  classeEnergie     DpeClass
+  classeEmission    DpeClass?
+
+  // Consommations
+  consoEnergie      Float?   // kWhEP/m²/an
+  emissionGes       Float?   // kgCO2/m²/an
+  consoEnergieFinale Float?  // kWh/m²/an
+
+  // Surfaces
+  surfaceHabitable  Float?
+  surfaceLogement   Float?
+
+  // Chauffage & ECS
+  typeChauffage     String?
+  typeEcs           String?
+
+  // Métadonnées
+  sourceRaw         Json?    // Payload brut ADEME (archive)
+  isLatest          Boolean  @default(true)
+
+  syncedAt          DateTime @default(now())
+  createdAt         DateTime @default(now())
+
+  @@index([propertyId])
+  @@index([classeEnergie])
+  @@index([dateDiagnostic])
+  @@index([ademeReference])
+  @@index([isLatest])
+  @@index([syncedAt])
+}
+
+enum DpeClass {
+  A
+  B
+  C
+  D
+  E
+  F
+  G
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 3. SCORING & OPPORTUNITÉS
+// ═══════════════════════════════════════════════════════════════
+
+model OpportunityScore {
+  id              String   @id @default(cuid())
+  propertyId      String
+  property        Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  // Score
+  score           Int      @db.SmallInt // 0–100
+  confidenceIndex Float    // 0.0–1.0
+
+  // Raisonnement explicable (XAI)
+  topReasons      Json     // [{"factor": "DPE_SEVERITY", "weight": 0.25, "description": "...", "impact": "positive"}]
+
+  // Signaux agrégés (snapshot au moment du calcul)
+  signalsSnapshot Json     // {"dpeAgeMonths": 24, "holdingYears": 15, "priceTrend": 1.08, "volumeSales": 12}
+
+  // Versionning
+  version         String   @default("1.0") // Version de l'algorithme
+
+  // Lifecycle
+  calculatedAt    DateTime @default(now())
+  expiresAt       DateTime // Recalcul obligatoire (30j)
+  isStale         Boolean  @default(false)
+
+  @@index([propertyId])
+  @@index([score])
+  @@index([confidenceIndex])
+  @@index([calculatedAt])
+  @@index([expiresAt])
+  @@index([isStale])
+  @@index([version])
+}
+
+model PropertyNote {
+  id          String   @id @default(cuid())
+  propertyId  String
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  content     String   @db.Text
+  createdBy   String   // userId
+  createdAt   DateTime @default(now())
+
+  @@index([propertyId])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 4. MARCHÉ & DVF
+// ═══════════════════════════════════════════════════════════════
+
+model MarketSignal {
+  id              String   @id @default(cuid())
+
+  // Cible géographique
+  propertyId      String?
+  property        Property? @relation(fields: [propertyId], references: [id])
+
+  irisCode        String
+  zipCode         String
+  department      String?
+
+  // Données du signal
+  signalType      MarketSignalType
+  value           Float
+  unit            String
+
+  // Période
+  periodStart     DateTime
+  periodEnd       DateTime
+
+  // Source
+  source          DataSource
+  sourceUrl       String?
+
+  // Métadonnées
+  sampleSize      Int?     // Nombre de transactions (pour DVF)
+  isInterpolated  Boolean  @default(false)
+
+  createdAt       DateTime @default(now())
+
+  @@index([propertyId])
+  @@index([irisCode])
+  @@index([zipCode])
+  @@index([signalType])
+  @@index([periodStart, periodEnd])
+  @@index([source])
+  @@index([createdAt])
+}
+
+enum MarketSignalType {
+  MEDIAN_PRICE_M2
+  MEDIAN_PRICE_TOTAL
+  PRICE_VARIATION_12M
+  PRICE_VARIATION_24M
+  PRICE_VARIATION_36M
+  VOLUME_SALES_12M
+  VOLUME_SALES_24M
+  DAYS_ON_MARKET_MEDIAN
+  NEW_LISTINGS_30D
+  NEW_LISTINGS_90D
+  RATIO_DEMAND_SUPPLY
+}
+
+enum DataSource {
+  DVF
+  SE_LOGER
+  MEILLEURS_AGENTS
+  LE_BON_COIN
+  ADEME
+  INSEE
+  ESTIMATION_INTERNAL
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 5. PIPELINE CRM INTÉGRÉ
+// ═══════════════════════════════════════════════════════════════
+
+model PipelineStage {
+  id              String   @id @default(cuid())
+  propertyId      String
+  property        Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  stage           PipelineStatus
+  enteredAt       DateTime @default(now())
+  exitedAt        DateTime?
+  durationDays    Int?     // Calculé automatiquement
+
+  notes           String?  @db.Text
+  movedBy         String   // userId
+
+  // Si synchronisé vers CRM externe
+  crmSyncStatus   CrmSyncStatus @default(PENDING)
+  crmSyncError    String?
+  crmExternalId   String?  // ID dans le CRM externe
+
+  createdAt       DateTime @default(now())
+
+  @@index([propertyId])
+  @@index([stage])
+  @@index([enteredAt])
+  @@index([crmSyncStatus])
+}
+
+enum CrmSyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+  RETRYING
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 6. ALERTES & NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════
+
+model Alert {
+  id          String    @id @default(cuid())
+  agencyId    String
+  agency      Agency    @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+
+  // Critères du radar (DSL JSON)
+  criteria    Json      // {"dpeClasses": ["F","G"], "minScore": 70, "zipCodes": ["75001"], "propertyTypes": ["MAISON"]}
+
+  // Canaux de notification
+  channels    Json      // ["in_app", "email", "sms", "webhook_crm"]
+
+  // Fréquence
+  frequency   AlertFrequency @default(REALTIME)
+
+  // Seuil de déclenchement
+  minScore    Int?      @default(50)
+
+  isActive    Boolean   @default(true)
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  alertReads  AlertRead[]
+
+  @@index([agencyId])
+  @@index([isActive])
+  @@index([lastRunAt])
+}
+
+enum AlertFrequency {
+  REALTIME
+  HOURLY
+  DAILY
+  WEEKLY
+}
+
+model AlertRead {
+  id        String   @id @default(cuid())
+  alertId   String
+  alert     Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  readAt    DateTime @default(now())
+
+  @@unique([alertId, userId])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 7. PROSPECTION & COPILOTE IA
+// ═══════════════════════════════════════════════════════════════
+
+model OutreachLog {
+  id              String   @id @default(cuid())
+
+  propertyId      String
+  property        Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  agencyId        String
+  agency          Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id])
+
+  // Canal & contenu
+  channel         OutreachChannel
+  subject         String?
+  content         String   @db.Text
+  contentHtml     String?  @db.Text
+
+  // IA
+  aiGenerated     Boolean  @default(false)
+  aiModel         String?  // "gpt-4o", "gpt-4o-mini"
+  aiPromptTokens  Int?
+  aiCompletionTokens Int?
+  aiPromptHash    String?  // Hash pour déduplication / audit
+
+  // Stratégie
+  strategy        String?  @db.Text // Résumé de la stratégie recommandée par le Copilote
+
+  // Statut
+  status          OutreachStatus @default(DRAFT)
+  scheduledAt     DateTime?
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  openedAt        DateTime?
+  clickedAt       DateTime?
+  repliedAt       DateTime?
+
+  // Métriques
+  openCount       Int      @default(0)
+  clickCount      Int      @default(0)
+
+  // RGPD
+  legalBasis      String   @default("prospection_previsionnelle_art_6_1_f")
+  optOutRequested Boolean  @default(false)
+  optOutAt        DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([propertyId])
+  @@index([agencyId])
+  @@index([userId])
+  @@index([status])
+  @@index([channel])
+  @@index([createdAt])
+  @@index([optOutRequested])
+}
+
+enum OutreachChannel {
+  EMAIL
+  SMS
+  PHONE_CALL
+  LINKEDIN
+  COURRIER
+  WHATSAPP
+}
+
+enum OutreachStatus {
+  DRAFT
+  SCHEDULED
+  SENT
+  DELIVERED
+  OPENED
+  CLICKED
+  REPLIED
+  CONVERTED
+  BOUNCED
+  OPTED_OUT
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 8. AUDIT & CONFORMITÉ RGPD
+// ═══════════════════════════════════════════════════════════════
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  agencyId    String
+  agency      Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  action      AuditAction
+  entityType  String   // "PROPERTY", "USER", "OUTREACH", "SCORE"
+  entityId    String
+
+  metadata    Json?    // Contexte supplémentaire
+
+  performedBy String?  // userId ou "SYSTEM"
+  ipAddress   String?
+  userAgent   String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([agencyId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([performedBy])
+  @@index([createdAt])
+}
+
+enum AuditAction {
+  PROPERTY_CREATED
+  PROPERTY_VIEWED
+  PROPERTY_EXPORTED
+  PROPERTY_ASSIGNED
+  SCORE_CALCULATED
+  SCORE_VIEWED
+  OUTREACH_CREATED
+  OUTREACH_SENT
+  OUTREACH_OPT_OUT
+  ALERT_TRIGGERED
+  ALERT_CREATED
+  ALERT_DELETED
+  USER_INVITED
+  USER_ROLE_CHANGED
+  CRM_SYNC_ATTEMPTED
+  CRM_SYNC_SUCCEEDED
+  CRM_SYNC_FAILED
+  SUBSCRIPTION_CHANGED
+  DATA_EXPORTED
+  LOGIN
+  LOGOUT
+  PASSWORD_CHANGED
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 9. FACTURATION (Stripe)
+// ═══════════════════════════════════════════════════════════════
+
+model BillingEvent {
+  id              String   @id @default(cuid())
+  agencyId        String
+  agency          Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+
+  eventType       BillingEventType
+  stripeEventId   String?  @unique
+
+  amount          Float?   // En centimes ou euros
+  currency        String   @default("EUR")
+
+  metadata        Json?
+
+  createdAt       DateTime @default(now())
+
+  @@index([agencyId])
+  @@index([eventType])
+  @@index([createdAt])
+}
+
+enum BillingEventType {
+  TRIAL_STARTED
+  TRIAL_ENDED
+  SUBSCRIPTION_CREATED
+  SUBSCRIPTION_UPDATED
+  SUBSCRIPTION_CANCELED
+  INVOICE_PAID
+  INVOICE_PAYMENT_FAILED
+  PAYMENT_SUCCEEDED
+  PAYMENT_FAILED
+  REFUND_ISSUED
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 10. ANNONCES & SCRAPING LÉGAL (Radar Annonces)
+// ═══════════════════════════════════════════════════════════════
+
+model Listing {
+  id              String   @id @default(cuid())
+
+  // Source
+  source          ListingSource
+  externalId      String   @unique
+  url             String
+
+  // Adresse (normalisée si possible)
+  address         String?
+  city            String?
+  zipCode         String?
+  lat             Float?
+  lng             Float?
+
+  // Caractéristiques
+  propertyType    PropertyType?
+  surfaceM2       Float?
+  price           Float?
+  pricePerM2      Float?
+  nbRooms         Int?
+
+  // Statut
+  status          ListingStatus @default(ACTIVE)
+  firstSeenAt     DateTime @default(now())
+  lastSeenAt      DateTime @updatedAt
+  removedAt       DateTime?
+
+  // Historique prix
+  priceHistory    Json?    // [{"price": 350000, "date": "2026-08-01"}]
+
+  // Matching avec Property (si on peut lier)
+  matchedPropertyId String?
+  matchConfidence Float?
+
+  createdAt       DateTime @default(now())
+
+  @@index([source])
+  @@index([zipCode])
+  @@index([status])
+  @@index([firstSeenAt])
+  @@index([lastSeenAt])
+  @@index([matchedPropertyId])
+}
+
+enum ListingSource {
+  SE_LOGER
+  LE_BON_COIN
+  MEILLEURS_AGENTS
+  ORPI
+  FNAIM
+  SAFTI
+  GENERIC
+}
+
+enum ListingStatus {
+  ACTIVE
+  PRICE_REDUCED
+  REMOVED
+  SOLD
+  EXPIRED
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 11. TÂCHES ASYNCHRONES (Bull MQ / Redis)
+// ═══════════════════════════════════════════════════════════════
+
+model JobQueue {
+  id          String   @id @default(cuid())
+
+  queueName   String   // "dpe-sync", "dvf-sync", "scoring", "crm-sync", "outreach"
+  jobType     String   // "batch", "single", "retry"
+
+  payload     Json     // Paramètres du job
+
+  status      JobStatus @default(PENDING)
+  priority    Int      @default(5) // 1 = haute, 10 = basse
+
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3)
+  lastError   String?  @db.Text
+
+  scheduledAt DateTime @default(now())
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  createdAt   DateTime @default(now())
+
+  @@index([queueName])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([priority])
+}
+
+enum JobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  RETRYING
+  CANCELLED
+}

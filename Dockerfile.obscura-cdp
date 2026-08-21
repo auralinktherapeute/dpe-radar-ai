@@ -1,0 +1,100 @@
+# Obscura CDP Server Dockerfile
+# Builds Obscura from source and exposes Chrome DevTools Protocol
+
+FROM rust:1.75-slim as builder
+
+WORKDIR /build
+
+# Install Obscura dependencies
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    cmake \
+    clang \
+    llvm-dev \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone Obscura repository
+RUN git clone https://github.com/obscura-dev/obscura.git . \
+    || echo "Note: Using local Obscura fork"
+
+# Build Obscura CLI with features
+RUN RUSTFLAGS="-C target-cpu=native" \
+    cargo build --release --locked \
+    --bin obscura-cli \
+    --features render,stealth,pdf \
+    && strip target/release/obscura-cli
+
+# Runtime stage
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+# Install runtime dependencies (lightweight headless browser stack)
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    libfontconfig1 \
+    libfreetype6 \
+    libxft6 \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy binary and config from builder
+COPY --from=builder /build/target/release/obscura-cli /usr/local/bin/
+
+# Create config directory
+RUN mkdir -p /etc/obscura /app/cache
+
+# Obscura CLI startup script
+RUN cat > /startup.sh << 'EOF'
+#!/bin/bash
+set -e
+
+echo "🔧 Starting Obscura CDP Server..."
+
+# Start Obscura with CDP protocol on port 9222
+/usr/local/bin/obscura-cli \
+  --headless \
+  --disable-blink-features=AutomationControlled \
+  --enable-features=NetworkService,NetworkServiceInProcess \
+  --disable-web-resources \
+  --disable-component-update \
+  --no-default-browser-check \
+  --no-first-run \
+  --disable-popup-blocking \
+  --disable-prompt-on-repost \
+  --disable-background-networking \
+  --enable-logging \
+  --v=1 \
+  --remote-debugging-port=9222 \
+  about:blank &
+
+OBSCURA_PID=$!
+
+# Wait for CDP server to be ready
+echo "⏳ Waiting for CDP server on port 9222..."
+for i in {1..30}; do
+  if curl -s http://localhost:9222/json/version > /dev/null; then
+    echo "✅ CDP Server ready!"
+    break
+  fi
+  sleep 1
+done
+
+# Keep container running
+wait $OBSCURA_PID
+EOF
+
+RUN chmod +x /startup.sh
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:9222/json/version || exit 1
+
+# Expose CDP port
+EXPOSE 9222
+
+CMD ["/startup.sh"]

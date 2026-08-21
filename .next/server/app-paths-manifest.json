@@ -1,0 +1,10 @@
+{
+  "/api/sante/route": "app/api/sante/route.js",
+  "/page": "app/page.js",
+  "/radar/page": "app/radar/page.js",
+  "/pipeline/page": "app/pipeline/page.js",
+  "/tableau-de-bord/page": "app/tableau-de-bord/page.js",
+  "/alertes/page": "app/alertes/page.js",
+  "/admin/page": "app/admin/page.js",
+  "/tarifs/page": "app/tarifs/page.js"
+}
