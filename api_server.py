@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 import json
 import math
 import os
+import threading
 import unicodedata
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -64,6 +65,73 @@ def load_properties():
 
 
 PROPERTIES = load_properties()
+
+
+# --------------------------------------------------------- rafraichissement
+
+def _age_donnees():
+    """Anciennete du DPE le plus recent du jeu, en jours. None si indeterminable."""
+    dates = [p.get('diagnostic_date') for p in PROPERTIES if p.get('diagnostic_date')]
+    if not dates:
+        return None
+    try:
+        return (datetime.now() - datetime.fromisoformat(max(dates))).days
+    except ValueError:
+        return None
+
+
+def _rafraichir_en_fond():
+    """Recharge depuis l'ADEME sans jamais interrompre le service.
+
+    L'instance gratuite Render s'endort puis redemarre : ce reveil sert de
+    cadence de rafraichissement, sans cron ni planificateur externe. Les
+    donnees existantes restent servies pendant toute l'operation, et toute
+    erreur laisse simplement le jeu en place.
+    """
+    global PROPERTIES
+    try:
+        from ademe_connector import recuperer, normaliser
+        depuis = (datetime.now() - timedelta(days=REFRESH_FENETRE)).strftime('%Y-%m-%d')
+        print(f"[refresh] interrogation ADEME depuis {depuis}", flush=True)
+
+        brut = recuperer(REFRESH_DEPARTEMENTS, depuis, maximum=REFRESH_MAX)
+        biens = [normaliser(b) for b in brut]
+        biens = [b for b in biens if b.get('address') and b.get('city')]
+        if not biens:
+            print("[refresh] aucun bien renvoye, jeu actuel conserve", flush=True)
+            return
+
+        par_adresse = {}
+        for b in sorted(biens, key=lambda x: x.get('diagnostic_date') or '', reverse=True):
+            par_adresse.setdefault((b['address'].lower(), b['city'].lower()), b)
+        biens = sorted(par_adresse.values(), key=lambda x: x.get('score') or 0, reverse=True)
+
+        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(biens, f, ensure_ascii=False, indent=1)
+        PROPERTIES = biens
+        print(f"[refresh] {len(biens)} biens rafraichis depuis l'ADEME", flush=True)
+    except Exception as e:
+        print(f"[refresh] echec ({type(e).__name__}: {e}), jeu actuel conserve", flush=True)
+
+
+REFRESH_ACTIF = os.environ.get('ADEME_AUTO_REFRESH', '1') not in ('0', 'false', 'no')
+REFRESH_SEUIL = int(os.environ.get('ADEME_REFRESH_JOURS', 7))
+REFRESH_FENETRE = int(os.environ.get('ADEME_FENETRE_JOURS', 60))
+REFRESH_MAX = int(os.environ.get('ADEME_MAX', 3000))
+REFRESH_DEPARTEMENTS = os.environ.get('ADEME_DEPARTEMENTS', '67,68').split(',')
+
+
+def demarrer_rafraichissement():
+    if not REFRESH_ACTIF:
+        return
+    age = _age_donnees()
+    if age is None or age < REFRESH_SEUIL:
+        print(f"[refresh] donnees vieilles de {age} jours, seuil {REFRESH_SEUIL} : rien a faire",
+              flush=True)
+        return
+    print(f"[refresh] donnees vieilles de {age} jours : rafraichissement en arriere-plan",
+          flush=True)
+    threading.Thread(target=_rafraichir_en_fond, daemon=True).start()
 
 # ------------------------------------------------------------------ helpers
 
@@ -278,6 +346,7 @@ class APIHandler(SimpleHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8000))
+    demarrer_rafraichissement()
     server = HTTPServer(('0.0.0.0', port), APIHandler)
     print(f"""
 +------------------------------------------------------------+
