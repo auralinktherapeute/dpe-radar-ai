@@ -373,6 +373,40 @@ cursor:pointer;width:100%;margin-top:8px}}
 </style></head><body><div class="wrap">{corps}</div></body></html>"""
 
 
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '').rstrip('/')
+SUPABASE_KEY = os.environ.get('SUPABASE_ANON_KEY', '')
+
+
+def _pousser_supabase(lead):
+    """Depose le lead via la fonction RPC. Renvoie True si accepte.
+
+    Le disque de l'instance Render est ephemere : sans cette persistance,
+    tout lead serait perdu au prochain redemarrage.
+    """
+    if not (SUPABASE_URL and SUPABASE_KEY):
+        return False
+    import urllib.request
+    corps = json.dumps({
+        'p_code': lead['code'], 'p_nom': lead['nom'],
+        'p_telephone': lead['telephone'] or None, 'p_email': lead['email'] or None,
+        'p_message': lead['message'] or None, 'p_adresse': lead['adresse'],
+        'p_commune': lead['commune'], 'p_code_postal': lead.get('code_postal'),
+        'p_grade': lead['grade'], 'p_numero_dpe': lead['numero_dpe'],
+    }).encode('utf-8')
+    req = urllib.request.Request(
+        f'{SUPABASE_URL}/rest/v1/rpc/dpe_radar_submit_lead',
+        data=corps, method='POST',
+        headers={'Content-Type': 'application/json',
+                 'apikey': SUPABASE_KEY,
+                 'Authorization': f'Bearer {SUPABASE_KEY}'})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return 200 <= r.status < 300
+    except Exception as e:
+        print(f"[lead] Supabase refuse ({type(e).__name__}: {e})", flush=True)
+        return False
+
+
 def enregistrer_lead(champs, index):
     code = normaliser_code(champs.get('code', [''])[0])
     bien = index.get(code)
@@ -389,16 +423,24 @@ def enregistrer_lead(champs, index):
         'commune': bien.get('city') if bien else None,
         'grade': bien.get('grade') if bien else None,
     }
-    leads = []
-    if os.path.exists(LEADS_FILE):
-        try:
-            with open(LEADS_FILE, encoding='utf-8') as f:
-                leads = json.load(f)
-        except (ValueError, OSError):
-            leads = []
-    leads.append(lead)
-    with open(LEADS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(leads, f, ensure_ascii=False, indent=1)
+    lead['code_postal'] = bien.get('zip') if bien else None
+
+    lead['persiste'] = _pousser_supabase(lead)
+    if not lead['persiste']:
+        # Repli local : mieux vaut un fichier ephemere que rien du tout.
+        # Sur Render il disparaitra au redemarrage, d'ou le log explicite.
+        leads = []
+        if os.path.exists(LEADS_FILE):
+            try:
+                with open(LEADS_FILE, encoding='utf-8') as f:
+                    leads = json.load(f)
+            except (ValueError, OSError):
+                leads = []
+        leads.append(lead)
+        with open(LEADS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(leads, f, ensure_ascii=False, indent=1)
+        print("[lead] ecrit en local seulement : configurez SUPABASE_URL et "
+              "SUPABASE_ANON_KEY pour une persistance durable", flush=True)
     return lead
 
 # ------------------------------------------------------------------- server
