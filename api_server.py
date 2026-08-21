@@ -249,6 +249,7 @@ def endpoint_search(params):
             'conso_kwh_m2_an': p.get('conso_kwh_m2_an'),
             'grade_ges': p.get('grade_ges'),
             'source': p.get('source'),
+            'code_suivi': code_suivi(p.get('numero_dpe')),
         })
     results.sort(key=lambda r: r['distance_km'])
     return results
@@ -299,12 +300,42 @@ def endpoint_properties(_params):
     } for p in PROPERTIES]
 
 
-def endpoint_leads(_params):
-    """Coordonnees transmises spontanement par des proprietaires."""
-    if not os.path.exists(LEADS_FILE):
-        return []
-    with open(LEADS_FILE, encoding='utf-8') as f:
-        return json.load(f)
+def _lire_leads_supabase():
+    """Lit les leads via la cle service_role, qui contourne RLS.
+
+    Cette cle ne quitte jamais le serveur : le navigateur n'appelle que
+    /api/leads, lui-meme protege par ADMIN_TOKEN.
+    """
+    if not (SUPABASE_URL and SUPABASE_SERVICE_KEY):
+        return None
+    import urllib.request
+    req = urllib.request.Request(
+        f'{SUPABASE_URL}/rest/v1/leads?select=*&order=recu_le.desc',
+        headers={'apikey': SUPABASE_SERVICE_KEY,
+                 'Authorization': f'Bearer {SUPABASE_SERVICE_KEY}',
+                 'Accept-Profile': 'dpe_radar'})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.loads(r.read().decode('utf-8'))
+    except Exception as e:
+        print(f"[leads] lecture Supabase impossible ({type(e).__name__}: {e})", flush=True)
+        return None
+
+
+def endpoint_leads(params):
+    """Coordonnees transmises spontanement. Acces restreint : donnees personnelles."""
+    if not ADMIN_TOKEN:
+        return {'error': "ADMIN_TOKEN non configure : consultation des leads desactivee"}
+    if params.get('token', [''])[0] != ADMIN_TOKEN:
+        return {'error': 'jeton invalide'}
+
+    distants = _lire_leads_supabase()
+    if distants is not None:
+        return distants
+    if os.path.exists(LEADS_FILE):
+        with open(LEADS_FILE, encoding='utf-8') as f:
+            return json.load(f)
+    return []
 
 
 ROUTES = {
@@ -375,6 +406,8 @@ cursor:pointer;width:100%;margin-top:8px}}
 
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '').rstrip('/')
 SUPABASE_KEY = os.environ.get('SUPABASE_ANON_KEY', '')
+SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '')
+ADMIN_TOKEN = os.environ.get('ADMIN_TOKEN', '')
 
 
 def _pousser_supabase(lead):

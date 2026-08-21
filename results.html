@@ -274,8 +274,23 @@
 
         .contact-todo {
             color: var(--text-secondary);
-            font-style: italic;
-            opacity: 0.65;
+            font-size: 11px;
+            opacity: 0.6;
+        }
+
+        .code-suivi {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            letter-spacing: 1px;
+            background: rgba(139, 92, 246, 0.18);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 2px 7px;
+            font-size: 12px;
+        }
+
+        .lead-nom {
+            color: var(--accent-cyan);
+            font-weight: 600;
         }
 
         .date-age {
@@ -487,6 +502,23 @@
 
     <script>
         let currentData = [];
+        // Les leads ne sont lisibles qu'avec un jeton admin : ces donnees sont
+        // personnelles et le dashboard est accessible publiquement.
+        let LEADS_PAR_CODE = {};
+
+        async function chargerLeads() {
+            const token = new URLSearchParams(location.search).get('token');
+            if (!token) return;
+            try {
+                const r = await fetch(`/api/leads?token=${encodeURIComponent(token)}`);
+                const data = await r.json();
+                if (Array.isArray(data)) {
+                    LEADS_PAR_CODE = Object.fromEntries(data.map(l => [l.code, l]));
+                }
+            } catch (e) {
+                console.error('leads indisponibles', e);
+            }
+        }
         let sortColumn = null;
         let sortOrder = 'asc';
 
@@ -618,11 +650,18 @@
                     else if (r.days_ago < 14) ageStr = `il y a ${r.days_ago} jours`;
                     else ageStr = `il y a ${Math.floor(r.days_ago / 7)} semaines`;
                 }
-                // L'ADEME ne diffuse aucun contact : on le dit, on n'invente rien.
-                const contactCell = (r.email || r.phone)
-                    ? `${r.email ? `<a href="mailto:${r.email}">${r.email}</a><br>` : ''}` +
-                      `${r.phone ? `<a href="tel:${r.phone.replace(/\s/g, '')}">${r.phone}</a>` : ''}`
-                    : `<span class="contact-todo">à enrichir</span>`;
+                // L'ADEME ne diffuse aucun contact. Le contact apparait ici
+                // quand le proprietaire repond au courrier portant son code.
+                const lead = LEADS_PAR_CODE[r.code_suivi];
+                let contactCell;
+                if (lead) {
+                    contactCell = `<div class="lead-nom">${lead.nom}</div>` +
+                        (lead.telephone ? `<a href="tel:${lead.telephone.replace(/\s/g,'')}">${lead.telephone}</a><br>` : '') +
+                        (lead.email ? `<a href="mailto:${lead.email}">${lead.email}</a>` : '');
+                } else {
+                    contactCell = `<span class="code-suivi">${r.code_suivi || '—'}</span>` +
+                        `<div class="contact-todo">courrier à envoyer</div>`;
+                }
                 return `
                 <tr>
                     <td>${r.address}</td>
@@ -729,7 +768,8 @@
             window.URL.revokeObjectURL(url);
         }
 
-        window.addEventListener('load', () => {
+        window.addEventListener('load', async () => {
+            await chargerLeads();
             loadCities();
             searchProperties();
         });
