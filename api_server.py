@@ -18,6 +18,8 @@ import os
 import threading
 import unicodedata
 
+from suivi import code_suivi, index_codes, normaliser_code
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, 'data.json')
 
@@ -297,12 +299,107 @@ def endpoint_properties(_params):
     } for p in PROPERTIES]
 
 
+def endpoint_leads(_params):
+    """Coordonnees transmises spontanement par des proprietaires."""
+    if not os.path.exists(LEADS_FILE):
+        return []
+    with open(LEADS_FILE, encoding='utf-8') as f:
+        return json.load(f)
+
+
 ROUTES = {
     '/api/cities': endpoint_cities,
     '/api/search': endpoint_search,
     '/api/dpe-alerts': endpoint_alerts,
     '/api/properties': endpoint_properties,
+    '/api/leads': endpoint_leads,
 }
+
+# ------------------------------------------------------ reponses proprietaires
+
+LEADS_FILE = os.path.join(BASE_DIR, 'leads.json')
+
+
+def page_reponse(bien, code):
+    """Page d'atterrissage : le bien est deja identifie par le code du courrier."""
+    if not bien:
+        corps = """<h1>Code non reconnu</h1>
+        <p>Verifiez le code figurant sur votre courrier.</p>"""
+    else:
+        surface = f"{bien['surface_m2']} m²" if bien.get('surface_m2') else ''
+        corps = f"""
+        <h1>Votre bien</h1>
+        <div class="bien">
+          <strong>{bien['address']}</strong><br>
+          {bien.get('zip') or ''} {bien.get('city') or ''}<br>
+          <span class="meta">DPE {bien.get('grade')} · {surface} · établi le
+          {bien.get('diagnostic_date') or ''}</span>
+        </div>
+        <p>Pour recevoir une estimation sans engagement, laissez-nous vos
+        coordonnées. Vous pouvez demander leur suppression à tout moment.</p>
+        <form method="POST" action="/api/lead">
+          <input type="hidden" name="code" value="{code}">
+          <label>Nom<input name="nom" required></label>
+          <label>Téléphone<input name="telephone" type="tel"></label>
+          <label>Email<input name="email" type="email"></label>
+          <label>Message<textarea name="message" rows="3"></textarea></label>
+          <label class="consent">
+            <input type="checkbox" name="consentement" value="oui" required>
+            J'accepte d'être recontacté au sujet de ce bien.
+          </label>
+          <button type="submit">Envoyer</button>
+        </form>"""
+
+    return f"""<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Estimation de votre bien</title><style>
+body{{background:#1a0a2e;color:#fff;font-family:-apple-system,sans-serif;
+margin:0;padding:24px;line-height:1.6}}
+.wrap{{max-width:520px;margin:0 auto}}
+h1{{font-size:24px;background:linear-gradient(135deg,#a855f7,#22d3ee);
+-webkit-background-clip:text;-webkit-text-fill-color:transparent}}
+.bien{{background:rgba(45,27,78,.8);border:1px solid rgba(168,85,247,.25);
+border-radius:12px;padding:16px;margin:16px 0}}
+.meta{{color:rgba(255,255,255,.6);font-size:14px}}
+label{{display:block;margin:14px 0;font-size:14px;color:#22d3ee}}
+input,textarea{{width:100%;box-sizing:border-box;margin-top:6px;padding:12px;
+border-radius:8px;border:1px solid rgba(168,85,247,.25);
+background:rgba(26,10,46,.8);color:#fff;font-size:16px}}
+.consent{{color:rgba(255,255,255,.75);font-size:13px}}
+.consent input{{width:auto;margin-right:8px}}
+button{{background:linear-gradient(135deg,#8b5cf6,#06b6d4);color:#fff;border:0;
+padding:14px 28px;border-radius:8px;font-size:16px;font-weight:600;
+cursor:pointer;width:100%;margin-top:8px}}
+</style></head><body><div class="wrap">{corps}</div></body></html>"""
+
+
+def enregistrer_lead(champs, index):
+    code = normaliser_code(champs.get('code', [''])[0])
+    bien = index.get(code)
+    lead = {
+        'recu_le': datetime.now().isoformat(timespec='seconds'),
+        'code': champs.get('code', [''])[0],
+        'nom': champs.get('nom', [''])[0].strip(),
+        'telephone': champs.get('telephone', [''])[0].strip(),
+        'email': champs.get('email', [''])[0].strip(),
+        'message': champs.get('message', [''])[0].strip(),
+        'consentement': champs.get('consentement', [''])[0] == 'oui',
+        'numero_dpe': bien.get('numero_dpe') if bien else None,
+        'adresse': bien.get('address') if bien else None,
+        'commune': bien.get('city') if bien else None,
+        'grade': bien.get('grade') if bien else None,
+    }
+    leads = []
+    if os.path.exists(LEADS_FILE):
+        try:
+            with open(LEADS_FILE, encoding='utf-8') as f:
+                leads = json.load(f)
+        except (ValueError, OSError):
+            leads = []
+    leads.append(lead)
+    with open(LEADS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(leads, f, ensure_ascii=False, indent=1)
+    return lead
 
 # ------------------------------------------------------------------- server
 
@@ -322,6 +419,13 @@ class APIHandler(SimpleHTTPRequestHandler):
                 self._send_json(500, {'error': str(e)})
             return
 
+        # Page de reponse : /r/<code> figurant sur le courrier
+        if parsed.path.startswith('/r/'):
+            code = normaliser_code(parsed.path[3:])
+            self._send_html(200, page_reponse(index_codes(PROPERTIES).get(code),
+                                              parsed.path[3:]))
+            return
+
         if parsed.path in ('/', ''):
             self.path = '/results.html'
         elif parsed.path == '/health':
@@ -329,6 +433,36 @@ class APIHandler(SimpleHTTPRequestHandler):
             return
 
         return super().do_GET()
+
+    def do_POST(self):
+        if urlparse(self.path).path != '/api/lead':
+            self._send_json(404, {'error': 'route inconnue'})
+            return
+        try:
+            taille = int(self.headers.get('Content-Length', 0))
+            if taille > 16384:               # un formulaire ne pese pas plus
+                self._send_json(413, {'error': 'requete trop volumineuse'})
+                return
+            champs = parse_qs(self.rfile.read(taille).decode('utf-8'))
+            lead = enregistrer_lead(champs, index_codes(PROPERTIES))
+            print(f"[lead] {lead['nom']} - {lead['adresse'] or 'code inconnu'}", flush=True)
+            self._send_html(200, """<!DOCTYPE html><html lang="fr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Merci</title><style>body{background:#1a0a2e;color:#fff;
+font-family:-apple-system,sans-serif;padding:40px;text-align:center;
+line-height:1.6}h1{color:#22d3ee}</style></head><body>
+<h1>Merci</h1><p>Votre demande est enregistree.<br>
+Vous serez recontacte prochainement.</p></body></html>""")
+        except Exception as e:
+            self._send_json(500, {'error': str(e)})
+
+    def _send_html(self, status, html):
+        body = html.encode('utf-8')
+        self.send_response(status)
+        self.send_header('Content-type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _send_json(self, status, payload):
         body = json.dumps(payload, ensure_ascii=False).encode('utf-8')

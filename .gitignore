@@ -44,3 +44,4 @@ coverage/
 *.pid
 .eslintcache
 publipostage.csv
+leads.json

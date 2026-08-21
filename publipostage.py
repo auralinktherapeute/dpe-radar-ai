@@ -25,10 +25,15 @@ import sys
 import unicodedata
 from datetime import datetime
 
+from suivi import code_suivi
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "data.json")
 
 DESTINATAIRE = "LE PROPRIETAIRE"
+
+# Adresse publique du service, pour le lien de reponse du courrier.
+SITE = os.environ.get("DPE_SITE", "https://dpe-radar-ai.onrender.com")
 
 # Ce que l'etiquette implique concretement pour le vendeur : c'est l'accroche
 # du courrier, et c'est factuel (loi Climat et resilience).
@@ -95,6 +100,7 @@ def export_csv(biens, chemin):
         "destinataire", "adresse", "code_postal", "commune", "ligne_postale",
         "etiquette_dpe", "contrainte", "date_dpe", "anciennete_jours",
         "surface_m2", "type_batiment", "conso_kwh_m2_an", "score", "numero_dpe",
+        "code_suivi", "lien_reponse",
     ]
     with open(chemin, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=colonnes, delimiter=";")
@@ -115,6 +121,8 @@ def export_csv(biens, chemin):
                 "conso_kwh_m2_an": b.get("conso_kwh_m2_an") or "",
                 "score": b.get("score") or "",
                 "numero_dpe": b.get("numero_dpe") or "",
+                "code_suivi": code_suivi(b.get("numero_dpe")) or "",
+                "lien_reponse": f"{SITE}/r/{code_suivi(b.get('numero_dpe')) or ''}",
             })
 
 
@@ -124,6 +132,7 @@ def rendre_lettres(biens, agence, sortie=sys.stdout):
     for b in biens:
         surface = f", {b['surface_m2']} m²" if b.get("surface_m2") else ""
         contrainte = CONTRAINTE.get(b.get("grade"), "")
+        code = code_suivi(b.get("numero_dpe")) or ""
         date_dpe = b.get("diagnostic_date") or ""
         try:
             date_dpe = datetime.fromisoformat(date_dpe).strftime("%d/%m/%Y")
@@ -150,6 +159,10 @@ Pour information, il s'agit d'un {contrainte}.
 Si vous envisagez une vente, je peux vous transmettre sans engagement une
 estimation tenant compte de cette classification et des travaux
 eventuellement valorisables.
+
+Pour une reponse immediate, rendez-vous sur :
+    {SITE}/r/{code}
+ou communiquez-nous simplement le code {code}.
 
 Vous restant a disposition,
 
