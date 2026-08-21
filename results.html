@@ -450,9 +450,9 @@
         <div id="error-message"></div>
 
         <div class="alerts-section">
-            <h2>🔴 ALERTES DPE - Ventes probables imminentes</h2>
+            <h2>🔴 ALERTES DPE - Diagnostics les plus récents</h2>
             <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 15px;">
-                Propriétés avec DPE établis récemment = contact propriétaire AVANT mise en vente
+                DPE des 14 derniers jours — la donnée la plus fraîche publiée par l'ADEME (délai de publication ≈ 11 jours)
             </p>
             <div id="alerts-container"></div>
         </div>
@@ -478,7 +478,7 @@
                     </tr>
                 </thead>
                 <tbody id="results-body">
-                    <tr><td colspan="7" class="no-results">Aucun résultat. Faites une recherche !</td></tr>
+                    <tr><td colspan="8" class="no-results">Aucun résultat. Faites une recherche !</td></tr>
                 </tbody>
             </table>
             </div>
@@ -654,14 +654,17 @@
 
         async function loadAlerts() {
             try {
-                const response = await fetch('/api/dpe-alerts?hours=24&limit=5');
+                // L'ADEME publie avec une dizaine de jours de decalage : une
+                // fenetre de 24h serait toujours vide. 14 jours = la donnee la
+                // plus fraiche reellement disponible.
+                const response = await fetch('/api/dpe-alerts?hours=336&limit=5');
                 const alerts = await response.json();
                 
                 const alertsHtml = alerts.map(a => `
                     <div class="alert-item">
                         <strong>🔴 ${a.address}, ${a.city}</strong><br>
                         Grade: <strong>${a.dpe_grade}</strong> | Opportunité: <strong>${a.opportunity_score ? a.opportunity_score.toFixed(0) : 0}/100</strong><br>
-                        📧 <a href="mailto:${a.email}">${a.email}</a> | 📞 <a href="tel:${a.phone}">${a.phone}</a>
+                        ${a.surface_m2 ? a.surface_m2 + ' m² · ' : ''}${a.type_batiment || ''} · DPE établi il y a ${a.days_ago} jours
                     </div>
                 `).join('');
 
