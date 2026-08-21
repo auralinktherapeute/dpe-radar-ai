@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: dpe-radar-ai
+    env: docker
+    region: frankfurt
+    plan: free
+    healthCheckPath: /api/cities
+    dockerfile: ./Dockerfile
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 8000
