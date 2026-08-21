@@ -18,5 +18,9 @@ COPY . .
 # Exposer le port
 EXPOSE 8000
 
+# Santé check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/cities').read()" || exit 1
+
 # Lancer l'API
-CMD ["python3", "api_server_v2.py"]
+CMD ["python3", "api_server.py"]
