@@ -1,0 +1,9 @@
+node_modules/
+target/
+.git
+__pycache__
+.pytest_cache
+.next
+mobile/
+workers/
+obscura-*

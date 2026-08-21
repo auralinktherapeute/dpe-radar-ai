@@ -1,1 +1,1 @@
-web: python3 api_server_v2.py
+web: python3 api_server.py
