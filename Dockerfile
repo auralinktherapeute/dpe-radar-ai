@@ -7,10 +7,9 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Copier requirements
+# Copier requirements et installer
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt 2>/dev/null || \
-    pip install psycopg2-binary requests geopy
+RUN pip install --no-cache-dir psycopg2-binary requests geopy
 
 # Copier l'app
 COPY . .
