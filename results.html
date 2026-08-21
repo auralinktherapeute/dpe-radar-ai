@@ -234,6 +234,11 @@
             border-color: var(--accent-cyan);
         }
 
+        /* Le tableau defile horizontalement plutot que d'ecraser les colonnes */
+        .table-scroll {
+            overflow-x: auto;
+        }
+
         table {
             width: 100%;
             border-collapse: collapse;
@@ -260,8 +265,20 @@
             min-width: 140px;
         }
 
-        th:nth-child(7), th:nth-child(8) {
-            min-width: 200px;
+        /* Email et telephone : jamais tronques, jamais coupes sur 2 lignes */
+        th:nth-child(7), td.col-email {
+            min-width: 210px;
+        }
+
+        th:nth-child(8), td.col-phone {
+            min-width: 160px;
+            white-space: nowrap;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .date-age {
+            font-size: 11px;
+            color: var(--text-secondary);
         }
 
         th:hover {
@@ -398,6 +415,18 @@
                 </div>
 
                 <div class="search-group">
+                    <label for="days-filter">Ancienneté du DPE</label>
+                    <select id="days-filter">
+                        <option value="1">Dernières 24 heures</option>
+                        <option value="7">7 derniers jours (1 semaine)</option>
+                        <option value="14">14 derniers jours (2 semaines)</option>
+                        <option value="30">30 derniers jours (1 mois)</option>
+                        <option value="90" selected>90 derniers jours (3 mois)</option>
+                        <option value="0">Toutes les dates</option>
+                    </select>
+                </div>
+
+                <div class="search-group">
                     <label for="grade-filter">Grade DPE</label>
                     <select id="grade-filter">
                         <option value="">Tous les grades</option>
@@ -432,6 +461,7 @@
                 <div class="results-count" id="results-count"></div>
             </div>
 
+            <div class="table-scroll">
             <table id="results-table">
                 <thead>
                     <tr>
@@ -449,6 +479,7 @@
                     <tr><td colspan="7" class="no-results">Aucun résultat. Faites une recherche !</td></tr>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 
@@ -481,6 +512,7 @@
             const minScore = document.getElementById('min-score').value || 0;
             const maxScore = document.getElementById('max-score').value || 100;
             const grade = document.getElementById('grade-filter').value;
+            const days = document.getElementById('days-filter').value;
             const errorDiv = document.getElementById('error-message');
 
             if (!city) {
@@ -489,7 +521,7 @@
             }
 
             try {
-                const response = await fetch(`/api/search?city=${encodeURIComponent(city)}&radius=${radius}&min_score=${minScore}&max_score=${maxScore}`);
+                const response = await fetch(`/api/search?city=${encodeURIComponent(city)}&radius=${radius}&min_score=${minScore}&max_score=${maxScore}&days=${days}`);
                 const data = await response.json();
 
                 if (data.error) {
@@ -576,6 +608,13 @@
                 const dateStr = r.diagnostic_date
                     ? new Date(r.diagnostic_date).toLocaleDateString('fr-FR')
                     : 'N/A';
+                let ageStr = '';
+                if (r.days_ago !== null && r.days_ago !== undefined) {
+                    if (r.days_ago === 0) ageStr = "aujourd'hui";
+                    else if (r.days_ago === 1) ageStr = 'il y a 1 jour';
+                    else if (r.days_ago < 14) ageStr = `il y a ${r.days_ago} jours`;
+                    else ageStr = `il y a ${Math.floor(r.days_ago / 7)} semaines`;
+                }
                 return `
                 <tr>
                     <td>${r.address}</td>
@@ -588,9 +627,12 @@
                             <div class="score-fill" style="width: ${r.score}%"></div>
                         </div>
                     </td>
-                    <td>${dateStr}</td>
-                    <td><a href="mailto:${r.email}">${r.email}</a></td>
-                    <td><a href="tel:${r.phone}">${r.phone}</a></td>
+                    <td>
+                        <div>${dateStr}</div>
+                        <div class="date-age">${ageStr}</div>
+                    </td>
+                    <td class="col-email"><a href="mailto:${r.email}">${r.email}</a></td>
+                    <td class="col-phone"><a href="tel:${(r.phone || '').replace(/\s/g, '')}">${r.phone || 'N/A'}</a></td>
                 </tr>
             `;
             }).join('');
@@ -637,7 +679,7 @@
                 return;
             }
 
-            const headers = ['Adresse', 'Ville', 'Rayon (km)', 'Grade', 'Score', 'Date DPE', 'Email', 'Téléphone'];
+            const headers = ['Adresse', 'Ville', 'Rayon (km)', 'Grade', 'Score', 'Date DPE', 'Ancienneté (jours)', 'Email', 'Téléphone'];
             const csv = [headers.join(';')];
 
             currentData.forEach(row => {
@@ -651,6 +693,7 @@
                     row.grade,
                     row.score.toFixed(0),
                     dateStr,
+                    row.days_ago !== null && row.days_ago !== undefined ? row.days_ago : '',
                     row.email,
                     row.phone
                 ];

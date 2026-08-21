@@ -126,6 +126,10 @@ def endpoint_search(params):
     min_score = float(params.get('min_score', [0])[0])
     max_score = float(params.get('max_score', [100])[0])
 
+    # Anciennete max du DPE, en jours. 0 ou absent = pas de filtre.
+    days = int(params.get('days', [0])[0] or 0)
+    cutoff = datetime.now() - timedelta(days=days) if days > 0 else None
+
     if not query:
         return {'error': 'ville manquante', 'available_cities': [c['name'] for c in list_cities()]}
 
@@ -150,11 +154,22 @@ def endpoint_search(params):
         score = p.get('score') or 0
         if not (min_score <= score <= max_score):
             continue
+
+        established = None
+        if p.get('diagnostic_date'):
+            try:
+                established = datetime.fromisoformat(p['diagnostic_date'])
+            except ValueError:
+                established = None
+        if cutoff and (established is None or established < cutoff):
+            continue
+
         results.append({
             'id': p['id'], 'address': p['address'], 'city': p['city'], 'zip': p['zip'],
             'grade': p.get('grade') or 'N/A', 'score': score,
             'email': p.get('email'), 'phone': p.get('phone'),
             'diagnostic_date': p.get('diagnostic_date'),
+            'days_ago': (datetime.now() - established).days if established else None,
             'distance_km': round(distance, 2),
         })
     results.sort(key=lambda r: r['distance_km'])
