@@ -78,6 +78,9 @@ def charger(filtres):
                 continue
         if b.get("score", 0) < filtres.score_min:
             continue
+        # Un bien deja visible sur le marche est deja mandate : on l'ecarte.
+        if getattr(filtres, "exclure_en_vente", False) and b.get("on_market"):
+            continue
         retenus.append(b)
 
     retenus.sort(key=lambda b: b.get("score", 0), reverse=True)
@@ -170,6 +173,9 @@ def main():
                    help="anciennete maximale du DPE, en jours")
     p.add_argument("--score-min", type=float, default=0, dest="score_min")
     p.add_argument("--max", type=int, default=None, dest="maximum")
+    p.add_argument("--exclure-en-vente", action="store_true", dest="exclure_en_vente",
+                   help="ecarter les biens deja reperes sur le marche "
+                        "(necessite market_crossref.py au prealable)")
     p.add_argument("--format", choices=["csv", "lettres"], default="csv")
     p.add_argument("--sortie", default=os.path.join(BASE_DIR, "publipostage.csv"))
     p.add_argument("--agence", default="[Votre agence]\n[Adresse]\n[Code postal Ville]")
