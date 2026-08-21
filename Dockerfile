@@ -22,5 +22,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/cities').read()" || exit 1
 
-# Lancer l'API
-CMD ["python3", "api_server.py"]
+# Lancer via script
+CMD ["bash", "start.sh"]
